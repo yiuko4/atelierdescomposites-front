@@ -3,22 +3,62 @@ import Head from 'next/head';
 import { useRouter } from 'next/router';
 import styles from '../styles/Authentication.module.css';
 
+const API_URL = 'http://localhost:30033';
+
 const AuthenticationPage: React.FC = () => {
   const router = useRouter();
   const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleLogin = () => {
-    // In a real application, you would validate credentials against a backend
-    // This is a simple example for demonstration purposes
-    if (login && password) {
-      // Store auth token in localStorage
-      localStorage.setItem('authToken', 'demo-token');
+  const handleLogin = async () => {
+    // Reset error state
+    setError('');
+    
+    // Validate inputs
+    if (!login || !password) {
+      setError('Veuillez saisir votre identifiant et mot de passe');
+      return;
+    }
+    
+    setIsLoading(true);
+    
+    try {
+      // Call the API endpoint for authentication
+      const response = await fetch(`${API_URL}/api/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          username: login,
+          password: password
+        })
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        // Handle authentication error
+        throw new Error(data.message || 'Échec de l\'authentification');
+      }
+      
+      // Store the JWT token and user info in localStorage
+      localStorage.setItem('authToken', data.token);
+      localStorage.setItem('userData', JSON.stringify({
+        id: data.user.id,
+        username: data.user.username,
+        role: data.user.role
+      }));
+      
       // Redirect to main page
       router.push('/main');
-    } else {
-      setError('Please enter both login and password');
+    } catch (err) {
+      console.error('Login error:', err);
+      setError(err instanceof Error ? err.message : 'Une erreur est survenue lors de la connexion');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -53,8 +93,9 @@ const AuthenticationPage: React.FC = () => {
             <button 
               className={styles.connectButton}
               onClick={handleLogin}
+              disabled={isLoading}
             >
-              Connect
+              {isLoading ? 'Connexion...' : 'Se connecter'}
             </button>
           </div>
         </main>
