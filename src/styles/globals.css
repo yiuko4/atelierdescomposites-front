@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "../../tailwind.config.js";
 
 html, body, #__next {
   height: 100%;
