@@ -1,0 +1,162 @@
+.pageContainer {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background-color: #f0f0f0;
+  color: #333;
+}
+
+.header {
+  background-color: #003399; /* Dark blue */
+  color: white;
+  padding: 15px 30px;
+  text-align: left;
+}
+
+.header h1 {
+  margin: 0;
+  font-size: 1.5em;
+}
+
+.mainAppContainer {
+  display: flex;
+  flex-grow: 1;
+  padding: 20px;
+  gap: 20px;
+}
+
+.sidebarLeft,
+.sidebarRight,
+.viewerSection {
+  background-color: #e9ecef; /* Light grey for sections */
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.sidebarLeft {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sidebarLeft h2,
+.sidebarRight h2,
+.viewerSection h2 {
+  text-align: center;
+  margin-top: 0;
+  margin-bottom: 20px;
+  color: #333;
+}
+
+.pieceButton {
+  padding: 15px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  background-color: #f8f9fa;
+  cursor: pointer;
+  text-align: center;
+}
+
+.pieceButton:hover {
+  background-color: #e2e6ea;
+}
+
+.importButton {
+  padding: 20px;
+  border: 2px solid #007bff; /* Blue border */
+  border-radius: 5px;
+  background-color: white;
+  color: #007bff;
+  font-size: 1.1em;
+  font-weight: bold;
+  cursor: pointer;
+  margin-top: auto; /* Pushes to the bottom */
+}
+
+.importButton:hover {
+  background-color: #e7f3ff;
+}
+
+.viewerSection {
+  flex: 3;
+  display: flex;
+  flex-direction: column;
+}
+
+.viewerPlaceholder {
+  flex-grow: 1;
+  background-color: #d0d0d0; /* Darker grey for viewer area */
+  border-radius: 5px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  color: #666;
+  font-style: italic;
+}
+
+.sidebarRight {
+  flex: 1.5;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.paramGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.paramGroup label {
+  font-size: 0.9em;
+  color: #555;
+}
+
+.paramInput {
+  padding: 10px;
+  border: 1px solid #ced4da;
+  border-radius: 5px;
+  background-color: #f8f9fa;
+}
+
+.testButton,
+.startButton {
+  padding: 15px;
+  border-radius: 5px;
+  font-size: 1em;
+  font-weight: bold;
+  cursor: pointer;
+  color: white;
+  border: none;
+}
+
+.testButton {
+  background-color: #007bff; /* Blue */
+}
+
+.testButton:hover {
+  background-color: #0056b3;
+}
+
+.startButton {
+  background-color: #007bff; /* Blue */
+  margin-top: 10px;
+}
+
+.startButton:hover {
+  background-color: #0056b3;
+}
+
+/* Responsive Adjustments */
+@media (max-width: 768px) {
+  .mainAppContainer {
+    flex-direction: column;
+  }
+
+  .sidebarLeft,
+  .sidebarRight {
+    flex-basis: auto; /* Allow them to take natural height */
+  }
+}
