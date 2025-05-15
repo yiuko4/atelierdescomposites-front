@@ -1,9 +1,104 @@
-import React from 'react';
+import React, { useState } from 'react';
 import Head from 'next/head';
 import styles from '../styles/Main.module.css';
 import AuthGuard from '../components/AuthGuard';
+import DxfViewer from '../components/DxfViewer';
+//import dynamic from 'next/dynamic';
 
 const MainPage: React.FC = () => {
+  // Définir l'interface pour une pièce
+  interface Piece {
+    id: number;
+    name: string;
+    dxfData: ArrayBuffer | null;
+  }
+
+  // État pour stocker les pièces disponibles
+  const [pieces, setPieces] = useState<Piece[]>([
+    { id: 1, name: 'Pièce 1', dxfData: null },
+    { id: 2, name: 'Pièce 2', dxfData: null },
+    { id: 3, name: 'Pièce 3', dxfData: null },
+    { id: 4, name: 'Pièce 4', dxfData: null }
+  ]);
+  
+  // État pour stocker la pièce sélectionnée
+  const [selectedPiece, setSelectedPiece] = useState<number | null>(null);
+  
+  // État pour stocker les données DXF actuellement affichées
+  const [currentDxfData, setCurrentDxfData] = useState<ArrayBuffer | null>(null);
+  
+  // Fonction pour gérer l'importation d'une nouvelle pièce
+  const handleImportPiece = () => {
+    // Créer un input de type file invisible
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = '.dxf';
+    fileInput.style.display = 'none';
+    document.body.appendChild(fileInput);
+
+    // Gérer l'événement de changement de fichier
+    fileInput.onchange = async (event) => {
+      const target = event.target as HTMLInputElement;
+      const files = target.files;
+      
+      if (files && files.length > 0) {
+        const file = files[0];
+        try {
+          // Lire le fichier DXF
+          const fileReader = new FileReader();
+          
+          fileReader.onload = (e) => {
+            if (e.target && e.target.result) {
+              const dxfData = e.target.result as ArrayBuffer;
+              
+              // Créer une nouvelle pièce avec les données DXF
+              const newPiece = {
+                id: pieces.length + 1,
+                name: file.name.split('.')[0], // Utiliser le nom du fichier sans l'extension
+                dxfData: dxfData
+              };
+              
+              // Ajouter la nouvelle pièce à la liste
+              setPieces([...pieces, newPiece]);
+              
+              // Sélectionner la nouvelle pièce et afficher ses données DXF
+              setSelectedPiece(newPiece.id);
+              setCurrentDxfData(dxfData);
+              
+              alert(`Pièce "${newPiece.name}" importée avec succès!`);
+            }
+          };
+          
+          fileReader.onerror = () => {
+            throw new Error('Erreur lors de la lecture du fichier');
+          };
+          
+          fileReader.readAsArrayBuffer(file);
+          
+        } catch (error) {
+          console.error('Error importing piece:', error);
+          alert('Erreur lors de l\'importation de la pièce. Veuillez vérifier le format du fichier.');
+        }
+      }
+      
+      // Nettoyer
+      document.body.removeChild(fileInput);
+    };
+    
+    // Déclencher le clic sur l'input
+    fileInput.click();
+  };
+  
+  // Fonction pour sélectionner une pièce
+  const handleSelectPiece = (pieceId: number) => {
+    setSelectedPiece(pieceId);
+    
+    // Trouver la pièce sélectionnée et afficher ses données DXF
+    const selectedPieceData = pieces.find(piece => piece.id === pieceId);
+    if (selectedPieceData) {
+      setCurrentDxfData(selectedPieceData.dxfData);
+    }
+  };
   return (
     <AuthGuard>
     <>
@@ -17,16 +112,26 @@ const MainPage: React.FC = () => {
         <div className={styles.mainAppContainer}>
           <aside className={styles.sidebarLeft}>
             <h2>Anciennes pièces</h2>
-            <button className={styles.pieceButton}>Pièce 1</button>
-            <button className={styles.pieceButton}>Pièce 2</button>
-            <button className={styles.pieceButton}>Pièce 3</button>
-            <button className={styles.pieceButton}>Pièce 4</button>
-            <button className={styles.importButton}>IMPORTER UNE PIECE</button>
+            {pieces.map(piece => (
+              <button 
+                key={piece.id}
+                className={`${styles.pieceButton} ${selectedPiece === piece.id ? styles.pieceButtonActive : ''}`}
+                onClick={() => handleSelectPiece(piece.id)}
+              >
+                {piece.name}
+              </button>
+            ))}
+            <button 
+              className={styles.importButton}
+              onClick={handleImportPiece}
+            >
+              IMPORTER UNE PIECE
+            </button>
           </aside>
           <main className={styles.viewerSection}>
             <h2>Viewer</h2>
             <div className={styles.viewerPlaceholder}>
-              {/* Viewer content will go here */}
+              <DxfViewer dxfData={currentDxfData} />
             </div>
           </main>
           <aside className={styles.sidebarRight}>

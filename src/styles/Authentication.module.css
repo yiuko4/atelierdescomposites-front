@@ -2,10 +2,15 @@
   display: flex;
   flex-direction: column;
   min-height: 100vh;
-  height: 100%;
+  height: 100vh; /* Utiliser vh au lieu de % pour garantir 100% de la hauteur de la fenêtre */
   width: 100%;
   background-color: #f0f0f0;
   overflow: hidden;
+  position: absolute; /* Position absolue pour couvrir toute la fenêtre */
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
 }
 
 .header {
@@ -25,7 +30,7 @@
   display: flex;
   justify-content: center;
   align-items: center;
-  flex-grow: 1; /* Takes remaining vertical space */
+  flex: 1 1 auto; /* Prend tout l'espace vertical disponible */
   padding: 20px;
 }
 
@@ -43,6 +48,7 @@
   border-radius: 5px;
   font-size: 1em;
   background-color: #e9f5ff; /* Light blue background for inputs */
+  font-weight: 500;
 }
 
 .inputField::placeholder {
@@ -73,4 +79,5 @@
   padding: 10px;
   margin-bottom: 10px;
   text-align: center;
+  font-weight: 500;
 }
