@@ -103,8 +103,8 @@ const DxfViewer: React.FC<DxfViewerProps> = ({ dxfData }) => {
         height,
         null
       );
-      viewer.draw(); // Dessine les entités DXF dans la scène
-      // viewer.animate(); // Non nécessaire, OrbitControls gère la boucle de rendu via les événements 'change'
+      // viewer.draw(); // Supprimé: Le constructeur de Viewer appelle déjà draw() en interne.
+      // viewer.animate(); // Non nécessaire, le constructeur de Viewer l'appelle aussi si animateAfterDraw est true (par défaut).
 
       viewerInstanceRef.current = viewer;
     } catch (error) {
@@ -124,7 +124,7 @@ const DxfViewer: React.FC<DxfViewerProps> = ({ dxfData }) => {
   return (
     <div
       style={{
-        width: "100%",
+        width: "120%",
         height: "100%",
         position: "absolute", // Conserve le positionnement du composant DxfViewer lui-même
         top: 0,
@@ -152,24 +152,6 @@ const DxfViewer: React.FC<DxfViewerProps> = ({ dxfData }) => {
           }}
         >
           Importez un fichier DXF pour le visualiser ici
-        </div>
-      )}
-      {/* Afficher le bouton Reset uniquement si des données DXF sont chargées */}
-      {dxfData && viewerInstanceRef.current && (
-        <div style={{ position: "absolute", bottom: 10, right: 10, zIndex: 1 }}>
-          <button
-            onClick={resetView}
-            style={{
-              padding: "5px 10px",
-              backgroundColor: "#007bff",
-              color: "white",
-              border: "none",
-              borderRadius: 3,
-              cursor: "pointer",
-            }}
-          >
-            Reset
-          </button>
         </div>
       )}
     </div>
