@@ -1,0 +1,73 @@
+.pageContainer {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background-color: #f0f0f0;
+}
+
+.header {
+  background-color: #003399; /* Dark blue */
+  color: white;
+  padding: 15px 30px;
+  text-align: left;
+  width: 100%;
+}
+
+.header h1 {
+  margin: 0;
+  font-size: 1.5em;
+}
+
+.authContainer {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-grow: 1; /* Takes remaining vertical space */
+  padding: 20px;
+}
+
+.authForm {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
+  max-width: 350px;
+}
+
+.inputField {
+  padding: 15px;
+  border: 1px solid #007bff; /* Blue border */
+  border-radius: 5px;
+  font-size: 1em;
+  background-color: #e9f5ff; /* Light blue background for inputs */
+}
+
+.inputField::placeholder {
+  color: #6c757d;
+}
+
+.connectButton {
+  padding: 15px;
+  border: 1px solid green;
+  border-radius: 5px;
+  background-color: white;
+  color: green;
+  font-size: 1em;
+  cursor: pointer;
+  font-weight: bold;
+  transition: background-color 0.2s;
+}
+
+.connectButton:hover {
+  background-color: #e6ffe6;
+}
+
+.errorMessage {
+  color: #dc3545;
+  background-color: #f8d7da;
+  border: 1px solid #f5c6cb;
+  border-radius: 5px;
+  padding: 10px;
+  margin-bottom: 10px;
+  text-align: center;
+}
