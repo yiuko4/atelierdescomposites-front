@@ -15,10 +15,7 @@ const MainPage: React.FC = () => {
 
   // État pour stocker les pièces disponibles
   const [pieces, setPieces] = useState<Piece[]>([
-    { id: 1, name: "Pièce 1", dxfData: null },
-    { id: 2, name: "Pièce 2", dxfData: null },
-    { id: 3, name: "Pièce 3", dxfData: null },
-    { id: 4, name: "Pièce 4", dxfData: null },
+    { id: 1, name: "Ciel", dxfData: null },
   ]);
 
   // État pour stocker la pièce sélectionnée
@@ -186,7 +183,7 @@ const MainPage: React.FC = () => {
             </aside>
             <main className={styles.viewerSection}>
               <h2>Viewer</h2>
-              <div className={styles.viewerPlaceholder}>
+              <div className={`${styles.viewerPlaceholder}`}>
                 <DxfViewer dxfData={currentDxfData} />
               </div>
             </main>
