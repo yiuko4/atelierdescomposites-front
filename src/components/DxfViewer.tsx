@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from 'react';
-// Importer correctement le module dxf-parser
 const DxfParser = require('dxf-parser').DxfParser;
 
 interface DxfViewerProps {
@@ -15,166 +14,99 @@ const DxfViewer: React.FC<DxfViewerProps> = ({ dxfData }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
-  // Parse DXF data when it changes
   useEffect(() => {
     if (!dxfData) return;
 
     try {
-      // Créer une instance de la classe DxfParser du module
       const parser = new DxfParser();
       const text = new TextDecoder().decode(dxfData);
       const parsed = parser.parseSync(text);
       setParsedData(parsed);
 
-      // Calculate bounding box for auto-fit
-      let minX = Infinity;
-      let minY = Infinity;
-      let maxX = -Infinity;
-      let maxY = -Infinity;
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      parsed.entities?.forEach((entity: any) => {
+        const processPoint = (x: number, y: number) => {
+          minX = Math.min(minX, x);
+          minY = Math.min(minY, y);
+          maxX = Math.max(maxX, x);
+          maxY = Math.max(maxY, y);
+        };
 
-      // Process entities to find bounding box
-      if (parsed.entities && parsed.entities.length > 0) {
-        parsed.entities.forEach((entity: any) => {
-          if (entity.vertices) {
-            entity.vertices.forEach((vertex: any) => {
-              minX = Math.min(minX, vertex.x);
-              minY = Math.min(minY, vertex.y);
-              maxX = Math.max(maxX, vertex.x);
-              maxY = Math.max(maxY, vertex.y);
-            });
-          } else if (entity.center) {
-            const radius = entity.radius || 0;
-            minX = Math.min(minX, entity.center.x - radius);
-            minY = Math.min(minY, entity.center.y - radius);
-            maxX = Math.max(maxX, entity.center.x + radius);
-            maxY = Math.max(maxY, entity.center.y + radius);
-          } else if (entity.position) {
-            minX = Math.min(minX, entity.position.x);
-            minY = Math.min(minY, entity.position.y);
-            maxX = Math.max(maxX, entity.position.x);
-            maxY = Math.max(maxY, entity.position.y);
-          } else if (entity.startPoint && entity.endPoint) {
-            minX = Math.min(minX, entity.startPoint.x, entity.endPoint.x);
-            minY = Math.min(minY, entity.startPoint.y, entity.endPoint.y);
-            maxX = Math.max(maxX, entity.startPoint.x, entity.endPoint.x);
-            maxY = Math.max(maxY, entity.startPoint.y, entity.endPoint.y);
-          }
-        });
+        if (entity.vertices) entity.vertices.forEach((v: any) => processPoint(v.x, v.y));
+        if (entity.center) {
+          const r = entity.radius || 0;
+          processPoint(entity.center.x - r, entity.center.y - r);
+          processPoint(entity.center.x + r, entity.center.y + r);
+        }
+        if (entity.position) processPoint(entity.position.x, entity.position.y);
+        if (entity.startPoint && entity.endPoint) {
+          processPoint(entity.startPoint.x, entity.startPoint.y);
+          processPoint(entity.endPoint.x, entity.endPoint.y);
+        }
+      });
 
-        // Add some padding
-        const padding = Math.max(maxX - minX, maxY - minY) * 0.05;
-        setViewBox({
-          minX: minX - padding,
-          minY: minY - padding,
-          width: (maxX - minX) + padding * 2,
-          height: (maxY - minY) + padding * 2
-        });
-      }
+      const padding = Math.max(maxX - minX, maxY - minY) * 0.05;
+      setViewBox({ minX: minX - padding, minY: minY - padding, width: maxX - minX + padding * 2, height: maxY - minY + padding * 2 });
     } catch (error) {
       console.error('Error parsing DXF:', error);
     }
   }, [dxfData]);
 
-  // Draw the DXF on the canvas
   useEffect(() => {
     if (!canvasRef.current || !parsedData) return;
-
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Set canvas dimensions to match its display size
     const rect = canvas.getBoundingClientRect();
     canvas.width = rect.width;
     canvas.height = rect.height;
-
-    // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // Draw grid
     drawGrid(ctx, canvas.width, canvas.height);
 
-    // Calculate scale to fit the drawing
     const canvasRatio = canvas.width / canvas.height;
     const drawingRatio = viewBox.width / viewBox.height;
-    
-    let newScale;
-    if (drawingRatio > canvasRatio) {
-      // Drawing is wider than canvas
-      newScale = canvas.width / viewBox.width;
-    } else {
-      // Drawing is taller than canvas
-      newScale = canvas.height / viewBox.height;
-    }
-    
-    // Apply scale and pan
+    const newScale = drawingRatio > canvasRatio ? canvas.width / viewBox.width : canvas.height / viewBox.height;
     const effectiveScale = newScale * scale;
-    
-    // Transform context
+
     ctx.save();
     ctx.translate(canvas.width / 2 + pan.x, canvas.height / 2 + pan.y);
-    ctx.scale(effectiveScale, -effectiveScale); // Flip Y axis to match DXF coordinate system
-    ctx.translate(
-      -(viewBox.minX + viewBox.width / 2),
-      -(viewBox.minY + viewBox.height / 2)
-    );
-
-    // Draw entities
+    ctx.scale(effectiveScale, -effectiveScale);
+    ctx.translate(-(viewBox.minX + viewBox.width / 2), -(viewBox.minY + viewBox.height / 2));
     ctx.strokeStyle = '#333';
     ctx.lineWidth = 1 / effectiveScale;
-    
-    if (parsedData.entities) {
-      parsedData.entities.forEach((entity: any) => {
-        drawEntity(ctx, entity);
-      });
-    }
-
+    parsedData.entities?.forEach((entity: any) => drawEntity(ctx, entity));
     ctx.restore();
   }, [parsedData, viewBox, scale, pan]);
 
-  // Draw grid on canvas
   const drawGrid = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
-    const gridSize = 20;
-    const majorGridSize = gridSize * 5;
-    
-    ctx.strokeStyle = '#e0e0e0';
-    ctx.lineWidth = 0.5;
-    
-    // Draw minor grid lines
-    for (let x = 0; x < width; x += gridSize) {
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, height);
-      ctx.stroke();
-    }
-    
-    for (let y = 0; y < height; y += gridSize) {
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(width, y);
-      ctx.stroke();
-    }
-    
-    // Draw major grid lines
-    ctx.strokeStyle = '#c0c0c0';
-    ctx.lineWidth = 1;
-    
-    for (let x = 0; x < width; x += majorGridSize) {
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, height);
-      ctx.stroke();
-    }
-    
-    for (let y = 0; y < height; y += majorGridSize) {
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(width, y);
-      ctx.stroke();
-    }
+    const gridSize = 20, majorGridSize = gridSize * 5;
+    ctx.strokeStyle = '#e0e0e0'; ctx.lineWidth = 0.5;
+    for (let x = 0; x < width; x += gridSize) ctx.stroke(new Path2D(`M${x} 0V${height}`));
+    for (let y = 0; y < height; y += gridSize) ctx.stroke(new Path2D(`M0 ${y}H${width}`));
+    ctx.strokeStyle = '#c0c0c0'; ctx.lineWidth = 1;
+    for (let x = 0; x < width; x += majorGridSize) ctx.stroke(new Path2D(`M${x} 0V${height}`));
+    for (let y = 0; y < height; y += majorGridSize) ctx.stroke(new Path2D(`M0 ${y}H${width}`));
   };
 
-  // Draw a single DXF entity
+  const drawArcFromBulge = (ctx: CanvasRenderingContext2D, start: any, end: any, bulge: number) => {
+    const dx = end.x - start.x, dy = end.y - start.y;
+    const chord = Math.sqrt(dx * dx + dy * dy);
+    const theta = 4 * Math.atan(bulge);
+    const radius = chord / (2 * Math.sin(theta / 2));
+    const midX = (start.x + end.x) / 2;
+    const midY = (start.y + end.y) / 2;
+    const angle = Math.atan2(dy, dx);
+    const sagitta = (bulge * chord) / 2;
+    const centerX = midX - sagitta * (dy / chord);
+    const centerY = midY + sagitta * (dx / chord);
+    const startAngle = Math.atan2(start.y - centerY, start.x - centerX);
+    const endAngle = Math.atan2(end.y - centerY, end.x - centerX);
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, Math.abs(radius), startAngle, endAngle, bulge < 0);
+    ctx.stroke();
+  };
+
   const drawEntity = (ctx: CanvasRenderingContext2D, entity: any) => {
     switch (entity.type) {
       case 'LINE':
@@ -183,144 +115,62 @@ const DxfViewer: React.FC<DxfViewerProps> = ({ dxfData }) => {
         ctx.lineTo(entity.vertices[1].x, entity.vertices[1].y);
         ctx.stroke();
         break;
-        
       case 'LWPOLYLINE':
-      case 'POLYLINE':
-        if (entity.vertices.length > 0) {
-          ctx.beginPath();
-          ctx.moveTo(entity.vertices[0].x, entity.vertices[0].y);
-          
-          for (let i = 1; i < entity.vertices.length; i++) {
-            ctx.lineTo(entity.vertices[i].x, entity.vertices[i].y);
-          }
-          
-          if (entity.closed) {
-            ctx.closePath();
-          }
-          
-          ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(entity.vertices[0].x, entity.vertices[0].y);
+        for (let i = 0; i < entity.vertices.length - 1; i++) {
+          const v1 = entity.vertices[i];
+          const v2 = entity.vertices[i + 1];
+          const bulge = v1.bulge || 0;
+          bulge !== 0 ? drawArcFromBulge(ctx, v1, v2, bulge) : ctx.lineTo(v2.x, v2.y);
         }
+        if (entity.closed) ctx.closePath();
+        ctx.stroke();
         break;
-        
       case 'CIRCLE':
         ctx.beginPath();
-        ctx.arc(entity.center.x, entity.center.y, entity.radius, 0, Math.PI * 2);
+        ctx.arc(entity.center.x, entity.center.y, entity.radius, 0, 2 * Math.PI);
         ctx.stroke();
-        break;
-        
-      case 'ARC':
-        ctx.beginPath();
-        ctx.arc(
-          entity.center.x, 
-          entity.center.y, 
-          entity.radius, 
-          (entity.startAngle * Math.PI) / 180, 
-          (entity.endAngle * Math.PI) / 180
-        );
-        ctx.stroke();
-        break;
-        
-      case 'TEXT':
-        ctx.save();
-        ctx.scale(1, -1); // Flip text right-side up
-        ctx.font = '12px sans-serif';
-        ctx.fillText(entity.text, entity.position.x, -entity.position.y);
-        ctx.restore();
         break;
     }
   };
 
-  // Handle mouse wheel for zooming
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
-    const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
-    setScale(prevScale => prevScale * zoomFactor);
+    const zoom = e.deltaY > 0 ? 0.9 : 1.1;
+    setScale(prev => prev * zoom);
   };
 
-  // Handle mouse down for panning
   const handleMouseDown = (e: React.MouseEvent) => {
     setIsDragging(true);
     setDragStart({ x: e.clientX, y: e.clientY });
   };
 
-  // Handle mouse move for panning
   const handleMouseMove = (e: React.MouseEvent) => {
     if (!isDragging) return;
-    
     const dx = e.clientX - dragStart.x;
     const dy = e.clientY - dragStart.y;
-    
-    setPan(prevPan => ({
-      x: prevPan.x + dx,
-      y: prevPan.y + dy
-    }));
-    
+    setPan(prev => ({ x: prev.x + dx, y: prev.y + dy }));
     setDragStart({ x: e.clientX, y: e.clientY });
   };
 
-  // Handle mouse up to stop panning
-  const handleMouseUp = () => {
-    setIsDragging(false);
-  };
-
-  // Reset view to fit the drawing
-  const resetView = () => {
-    setScale(1);
-    setPan({ x: 0, y: 0 });
-  };
+  const handleMouseUp = () => setIsDragging(false);
+  const resetView = () => { setScale(1); setPan({ x: 0, y: 0 }); };
 
   return (
-    <div className="dxf-viewer-container" style={{ width: '100%', height: '100%', position: 'relative' }}>
+    <div style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0 }}>
       <canvas
         ref={canvasRef}
-        width="800"
-        height="600"
-        style={{ 
-          width: '100%', 
-          height: '100%', 
-          backgroundColor: '#f0f0f0',
-          cursor: isDragging ? 'grabbing' : 'grab'
-        }}
+        style={{ width: '100%', height: '100%', backgroundColor: '#f0f0f0', cursor: isDragging ? 'grabbing' : 'grab' }}
         onWheel={handleWheel}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
       />
-      {!dxfData && (
-        <div style={{
-          position: 'absolute',
-          top: '50%',
-          left: '50%',
-          transform: 'translate(-50%, -50%)',
-          textAlign: 'center',
-          color: '#666',
-          fontStyle: 'italic'
-        }}>
-          Importez un fichier DXF pour le visualiser ici
-        </div>
-      )}
-      <div style={{
-        position: 'absolute',
-        bottom: '10px',
-        right: '10px',
-        display: 'flex',
-        gap: '5px'
-      }}>
-        <button
-          onClick={resetView}
-          style={{
-            padding: '5px 10px',
-            backgroundColor: '#007bff',
-            color: 'white',
-            border: 'none',
-            borderRadius: '3px',
-            cursor: 'pointer',
-            fontSize: '14px'
-          }}
-        >
-          Reset
-        </button>
+      {!dxfData && <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', color: '#666' }}>Importez un fichier DXF pour le visualiser ici</div>}
+      <div style={{ position: 'absolute', bottom: 10, right: 10 }}>
+        <button onClick={resetView} style={{ padding: '5px 10px', backgroundColor: '#007bff', color: 'white', border: 'none', borderRadius: 3 }}>Reset</button>
       </div>
     </div>
   );
