@@ -1,6 +1,6 @@
 import Head from "next/head";
 import { useRouter } from "next/router";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import styles from "../styles/Authentication.module.css";
 
 const API_URL = "http://localhost:30001";
@@ -12,7 +12,18 @@ const AuthenticationPage: React.FC = () => {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleLogin = async () => {
+  // Vérifier si l'utilisateur est déjà connecté
+  useEffect(() => {
+    const token = localStorage.getItem("authToken");
+    if (token) {
+      router.push("/main");
+    }
+  }, [router]);
+
+  const handleLogin = async (e?: React.FormEvent) => {
+    // Empêcher le comportement par défaut du formulaire
+    if (e) e.preventDefault();
+
     // Reset error state
     setError("");
 
@@ -69,42 +80,64 @@ const AuthenticationPage: React.FC = () => {
     }
   };
 
+  // Gérer la touche Enter
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      handleLogin();
+    }
+  };
+
   return (
     <>
       <Head>
-        <title>Authentification</title>
+        <title>Authentification - Atelier des Composites</title>
       </Head>
       <div className={styles.pageContainer}>
         <header className={styles.header}>
-          <h1>Authentification</h1>
+          <h1>Atelier des Composites</h1>
         </header>
         <main className={styles.authContainer}>
-          <div className={styles.authForm}>
+          <form className={styles.authForm} onSubmit={handleLogin}>
+            <h2 className={styles.formTitle}>Connexion</h2>
+            <p className={styles.formSubtitle}>
+              Veuillez vous connecter pour accéder à l'application
+            </p>
+
             {error && <div className={styles.errorMessage}>{error}</div>}
-            <input
-              type="text"
-              placeholder="Login"
-              aria-label="Login"
-              className={styles.inputField}
-              value={login}
-              onChange={(e) => setLogin(e.target.value)}
-            />
-            <input
-              type="password"
-              placeholder="Password"
-              aria-label="Password"
-              className={styles.inputField}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
+
+            <div>
+              <input
+                type="text"
+                placeholder="Identifiant"
+                aria-label="Identifiant"
+                className={styles.inputField}
+                value={login}
+                onChange={(e) => setLogin(e.target.value)}
+                onKeyDown={handleKeyDown}
+                autoFocus
+              />
+            </div>
+
+            <div>
+              <input
+                type="password"
+                placeholder="Mot de passe"
+                aria-label="Mot de passe"
+                className={styles.inputField}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                onKeyDown={handleKeyDown}
+              />
+            </div>
+
             <button
               className={styles.connectButton}
-              onClick={handleLogin}
+              type="submit"
               disabled={isLoading}
             >
-              {isLoading ? "Connexion..." : "Se connecter"}
+              {isLoading ? "Connexion en cours..." : "Se connecter"}
             </button>
-          </div>
+          </form>
         </main>
       </div>
     </>

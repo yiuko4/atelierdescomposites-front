@@ -1,7 +1,43 @@
 @import "tailwindcss";
-@import "../../tailwind.config.js";
 
-html, body, #__next {
+/* Import de Google Fonts - Montserrat (en-têtes) et Open Sans (corps) */
+@import url("https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Open+Sans:wght@300;400;500;600&display=swap");
+
+/* Variables CSS pour la cohérence des couleurs et de la typographie */
+:root {
+  /* Palette de couleurs principale */
+  --color-primary: #0055a4; /* Bleu français plus profond */
+  --color-primary-light: #1666b5; /* Version plus claire pour le hover */
+  --color-primary-dark: #003d7a; /* Version plus foncée pour les éléments actifs */
+  --color-secondary: #6c757d; /* Gris secondaire */
+  --color-accent: #ff6b35; /* Orange pour les accents et actions importantes */
+
+  /* Teintes neutres */
+  --color-bg: #f8f9fa; /* Fond global légèrement plus clair */
+  --color-bg-section: #ffffff; /* Fond des sections (plus contrastant) */
+  --color-text: #212529; /* Texte principal presque noir (meilleur contraste) */
+  --color-text-light: #495057; /* Texte secondaire */
+
+  /* États et feedback */
+  --color-success: #28a745; /* Vert pour succès */
+  --color-warning: #ffc107; /* Jaune pour avertissements */
+  --color-danger: #dc3545; /* Rouge pour erreurs/dangers */
+
+  /* Typographie */
+  --font-heading: "Montserrat", sans-serif;
+  --font-body: "Open Sans", sans-serif;
+
+  /* Dimensions et espacements */
+  --header-height: 60px;
+  --border-radius: 8px;
+  --box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  --transition-speed: 0.2s;
+}
+
+/* Reset et base */
+html,
+body,
+#__next {
   height: 100vh;
   width: 100%;
   margin: 0;
@@ -10,18 +46,80 @@ html, body, #__next {
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-  background-color: #f0f0f0;
-  color: #333;
+  font-family: var(--font-body);
   font-weight: 400;
+  font-size: 16px;
+  line-height: 1.5;
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Appliquer le style des boutons bleus à tous les éléments de texte */
+/* Suppression des règles conflictuelles avec les nouvelles variables CSS */
+/* 
 h1, h2, h3, h4, h5, h6, p, span, div, button, input, label, a {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
 }
 
-/* Style de texte en gras comme les boutons bleus */
 h1, h2, h3, button, .bold-text {
   font-weight: bold;
+}
+*/
+
+/* Typographie de base */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-heading);
+  font-weight: 600;
+  margin-top: 0;
+  color: var(--color-text);
+  line-height: 1.2;
+}
+
+h1 {
+  font-size: 2rem;
+}
+h2 {
+  font-size: 1.75rem;
+}
+h3 {
+  font-size: 1.5rem;
+}
+h4 {
+  font-size: 1.25rem;
+}
+h5 {
+  font-size: 1.1rem;
+}
+h6 {
+  font-size: 1rem;
+}
+
+p {
+  margin-top: 0;
+  margin-bottom: 1rem;
+}
+
+/* Styles des boutons, inputs, et autres éléments de formulaire */
+button,
+input,
+select,
+textarea {
+  font-family: var(--font-body);
+}
+
+button {
+  cursor: pointer;
+  transition: all var(--transition-speed) ease;
+}
+
+/* Accessibilité - focus visible pour la navigation au clavier */
+:focus-visible {
+  outline: 3px solid var(--color-primary-light);
+  outline-offset: 2px;
 }

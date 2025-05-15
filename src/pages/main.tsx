@@ -1,5 +1,5 @@
 import Head from "next/head";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import AuthGuard from "../components/AuthGuard";
 import ConfirmationModal, {
   ConfirmationModalProps,
@@ -51,6 +51,52 @@ const MainPage: React.FC = () => {
     name: string;
     content: string; // Contenu textuel du fichier DXF
   }
+
+  // Ajouter un nouvel état pour le nombre de pièces
+  const [pieceCount, setPieceCount] = useState<number>(1);
+
+  // Ajouter une constante pour limiter le nombre de pièces visibles
+  const MAX_VISIBLE_PIECES = 3;
+
+  // Références pour la zone de drop
+  const dropZoneRef = useRef<HTMLDivElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
+
+  // Fonction pour incrémenter ou décrémenter le nombre de pièces
+  const incrementPieceCount = (increment: number) => {
+    setPieceCount((prevCount) => Math.max(1, prevCount + increment));
+  };
+
+  // Fonction pour extraire le timestamp du nom de fichier
+  const parseTimestampFromName = (filename: string): number | null => {
+    // Tenter d'extraire une date de type YYYY-MM-DDTHH-MM-SS
+    const match = filename.match(/(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})/);
+    if (match && match[1]) {
+      const timestampStr = match[1].replace(/-/g, ""); // Enlever les séparateurs non standards pour Date.parse
+      const date = new Date(
+        parseInt(timestampStr.substring(0, 4), 10), // Année
+        parseInt(timestampStr.substring(4, 6), 10) - 1, // Mois (0-indexé)
+        parseInt(timestampStr.substring(6, 8), 10), // Jour
+        parseInt(timestampStr.substring(9, 11), 10), // Heure
+        parseInt(timestampStr.substring(11, 13), 10), // Minute
+        parseInt(timestampStr.substring(13, 15), 10) // Seconde
+      );
+      if (!isNaN(date.getTime())) {
+        return date.getTime();
+      }
+    }
+    // Tenter de parser directement si le format est plus standard après le T
+    const standardMatch = filename.match(
+      /(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})/
+    );
+    if (standardMatch && standardMatch[1]) {
+      const date = new Date(standardMatch[1]);
+      if (!isNaN(date.getTime())) {
+        return date.getTime();
+      }
+    }
+    return null;
+  };
 
   // Fonction pour récupérer le contenu d'un fichier DXF spécifique depuis le serveur
   const fetchDxfFileContentFromServer = async (
@@ -125,7 +171,7 @@ const MainPage: React.FC = () => {
     try {
       const authToken = localStorage.getItem("authToken");
       const headers: HeadersInit = {
-        "Content-Type": "application/json", // Bonne pratique, même si pas toujours requis pour GET
+        "Content-Type": "application/json",
       };
       if (authToken) {
         headers["Authorization"] = `Bearer ${authToken}`;
@@ -180,298 +226,349 @@ const MainPage: React.FC = () => {
   // Charger les fichiers du serveur au montage du composant
   // et potentiellement après des actions comme l'import.
   // Pour pouvoir appeler cette logique depuis handleImportPiece, nous allons l'extraire.
-  const refreshServerFiles = async () => {
+  const refreshServerFiles = async (fileToSelect?: string) => {
     console.log(
-      "[DEBUG] Rafraîchissement des fichiers DXF depuis le serveur..."
+      "[DEBUG] Rafraîchissement des fichiers DXF depuis le serveur...",
+      fileToSelect ? `Fichier à sélectionner: ${fileToSelect}` : ""
     );
     const serverFiles = await fetchImportedDxfFilesFromServer();
     console.log(
       "[SERVER FILES DEBUG] Fichiers récupérés (refresh):",
-      JSON.stringify(serverFiles)
+      serverFiles
     );
 
-    // Réinitialiser pieces à un tableau vide avant de le peupler avec les fichiers du serveur
-    // pour éviter les doublons ou les états incohérents si des ID changent.
-    // Ou, si vous voulez une fusion plus intelligente, il faudrait adapter.
-    // Pour l'instant, une réinitialisation simple est plus robuste après un import.
-
-    let newPieces: Piece[] = [];
     if (serverFiles.length > 0) {
-      newPieces = serverFiles.map((sf, index) => ({
-        id: index, // ID simples basés sur l'ordre du serveur après rafraîchissement
-        name: sf.name,
-        dxfData: null,
-      }));
-      console.log(
-        "[SERVER FILES DEBUG] Nouvelles pièces formatées (refresh):",
-        JSON.stringify(newPieces)
-      );
-    }
-    setPieces(newPieces);
+      const currentTimeForNonDatedFiles = Date.now(); // Pour les fichiers sans date valide dans le nom
 
-    // Optionnel: Si le viewer affichait quelque chose, le vider car la sélection pourrait ne plus être valide.
-    // setSelectedPiece(null);
-    // setCurrentDxfData(null);
+      const updatedPieces: Piece[] = serverFiles.map((file, index) => {
+        let id: number;
+        const timestampFromName = parseTimestampFromName(file.name);
+
+        if (fileToSelect && file.name === fileToSelect) {
+          // Pour la pièce nouvellement importée, s'assurer qu'elle a l'ID le plus élevé
+          // On peut utiliser le timestamp actuel ou celui du fichier s'il est plus récent.
+          id = Math.max(timestampFromName || 0, Date.now()) + 100000; // Ajoute un grand nombre pour être sûr
+          console.log(
+            `[DEBUG] Pièce à sélectionner (${file.name}) ID (prioritaire): ${id}`
+          );
+        } else if (timestampFromName !== null) {
+          id = timestampFromName;
+          console.log(
+            `[DEBUG] Pièce (${file.name}) ID (depuis nom de fichier): ${id}`
+          );
+        } else {
+          // Pour les fichiers sans timestamp valide dans le nom, utiliser un ID basé sur currentTime et l'index
+          // pour les classer de manière cohérente mais après ceux avec timestamp.
+          // On leur donne des IDs plus petits pour qu'ils apparaissent en bas après le tri décroissant.
+          id =
+            currentTimeForNonDatedFiles -
+            index * 1000 -
+            serverFiles.length * 1000; // Assure qu'ils sont plus anciens
+          console.log(
+            `[DEBUG] Pièce (${file.name}) ID (fallback, pas de date dans nom): ${id}`
+          );
+        }
+
+        return {
+          id: id,
+          name: file.name,
+          dxfData: null, // Pas de données DXF chargées initialement
+        };
+      });
+
+      console.log(
+        "[DEBUG] Liste des pièces avant tri:",
+        updatedPieces.map((p) => `${p.name} (ID: ${p.id})`)
+      );
+
+      // Trier les pièces pour avoir les plus récentes en haut (ID plus grand en premier)
+      updatedPieces.sort((a, b) => b.id - a.id);
+
+      console.log(
+        "[DEBUG] Liste des pièces après tri:",
+        updatedPieces.map((p) => `${p.name} (ID: ${p.id})`)
+      );
+
+      // Mettre à jour l'état avec les nouvelles pièces
+      setPieces(updatedPieces);
+
+      // Si un nom de fichier est spécifié, trouver et sélectionner cette pièce
+      if (fileToSelect) {
+        // Recherche exacte
+        const exactMatch = updatedPieces.find((p) => p.name === fileToSelect);
+        if (exactMatch) {
+          console.log(
+            `[DEBUG] Sélection de la pièce exacte: ${fileToSelect}, ID: ${exactMatch.id}`
+          );
+
+          // Utiliser setTimeout pour s'assurer que setState a bien été appliqué
+          setTimeout(() => {
+            setSelectedPiece(exactMatch.id);
+          }, 100);
+        }
+        // Si nous ne trouvons pas correspondance exacte, nous sélectionnons simplement la première pièce
+        // qui devrait être la plus récente en raison du tri
+        else if (updatedPieces.length > 0) {
+          console.log(
+            `[DEBUG] Pas de correspondance exacte, sélection de la première pièce: ${updatedPieces[0].name}`
+          );
+
+          // Utiliser setTimeout pour s'assurer que setState a bien été appliqué
+          setTimeout(() => {
+            setSelectedPiece(updatedPieces[0].id);
+          }, 100);
+        }
+      }
+    } else {
+      // Pas de fichiers disponibles, réinitialiser l'état
+      setPieces([]);
+      setSelectedPiece(null);
+      setCurrentDxfData(null);
+    }
   };
 
+  // Effet pour charger les fichiers depuis le serveur au chargement initial
   useEffect(() => {
-    // Remplacer l'ancien contenu de loadInitialData par un appel à refreshServerFiles
     refreshServerFiles();
   }, []);
 
-  // Fonction pour gérer l'importation d'une nouvelle pièce
+  // Effet pour charger le contenu DXF lorsqu'une pièce est sélectionnée
+  useEffect(() => {
+    if (selectedPiece !== null) {
+      const selectedPieceData = pieces.find((p) => p.id === selectedPiece);
+      if (selectedPieceData && selectedPieceData.name) {
+        console.log(
+          `[DEBUG] Chargement du contenu DXF pour la pièce: ${selectedPieceData.name}`
+        );
+        loadPieceContent(selectedPieceData.name);
+      }
+    } else {
+      // Aucune pièce sélectionnée, effacer les données actuelles
+      setCurrentDxfData(null);
+    }
+  }, [selectedPiece]);
+
+  // Fonction pour charger le contenu d'une pièce depuis le serveur
+  const loadPieceContent = async (pieceName: string) => {
+    console.log(
+      `[DEBUG] Tentative de chargement du contenu pour: ${pieceName}`
+    );
+    const dxfContent = await fetchDxfFileContentFromServer(pieceName);
+    if (dxfContent && dxfContent.content) {
+      // Créer un ArrayBuffer à partir du contenu textuel pour le visualiseur
+      const textEncoder = new TextEncoder();
+      const encodedData = textEncoder.encode(dxfContent.content);
+      const dxfDataArrayBuffer = encodedData.buffer;
+      setCurrentDxfData(dxfDataArrayBuffer as ArrayBuffer);
+    } else {
+      setCurrentDxfData(null);
+      showNotification(
+        `Impossible de charger le contenu de la pièce: ${pieceName}`,
+        "error"
+      );
+    }
+  };
+
+  // Fonction pour gérer l'importation d'un fichier
+  const handleFileImport = async (file: File) => {
+    if (!file || !file.name.toLowerCase().endsWith(".dxf")) {
+      showNotification("Seuls les fichiers DXF sont acceptés", "error");
+      return;
+    }
+
+    console.log(`[DEBUG] Fichier sélectionné pour import: ${file.name}`);
+
+    // Extraire le nom de base du fichier sans le chemin complet (pour les navigateurs qui incluent le chemin)
+    const fileName = file.name.split("\\").pop()?.split("/").pop() || file.name;
+    console.log(`[DEBUG] Nom de fichier extrait: ${fileName}`);
+
+    // Créer un objet FormData pour l'upload
+    const formData = new FormData();
+    formData.append("dxfFile", file); // IMPORTANT: 'dxfFile', pas 'file'
+    formData.append("numArcSegments", "24"); // Valeur par défaut
+
+    try {
+      const authToken = localStorage.getItem("authToken");
+      const headers: HeadersInit = {};
+      if (authToken) {
+        headers["Authorization"] = `Bearer ${authToken}`;
+      }
+
+      // Envoyer le fichier au serveur
+      const response = await fetch("http://localhost:30001/api/import-dxf", {
+        method: "POST",
+        headers: headers,
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response
+          .json()
+          .catch(() => ({ message: response.statusText }));
+        const errorMessage =
+          errorData.message || `Échec de l'import du fichier: ${fileName}`;
+        console.error("[DEBUG] Erreur lors de l'import:", errorMessage);
+        showNotification(errorMessage, "error");
+      } else {
+        const data = await response.json();
+        console.log("[DEBUG] Import réussi:", data);
+
+        // Obtenir le nom du fichier tel que stocké sur le serveur (s'il est retourné)
+        let fileNameToSelect = fileName;
+        if (data && data.filename) {
+          fileNameToSelect = data.filename;
+          console.log(
+            `[DEBUG] Nom du fichier tel que stocké sur le serveur: ${fileNameToSelect}`
+          );
+        }
+
+        showNotification(`Fichier ${fileName} importé avec succès!`, "success");
+
+        // Rafraîchir la liste des fichiers du serveur et sélectionner la nouvelle pièce
+        await refreshServerFiles(fileNameToSelect);
+      }
+    } catch (error) {
+      console.error("[DEBUG] Erreur réseau lors de l'import:", error);
+      showNotification(
+        "Erreur lors de la communication avec le serveur",
+        "error"
+      );
+    }
+  };
+
+  // Fonction pour importer une nouvelle pièce (déclenchée par le bouton d'import)
   const handleImportPiece = () => {
-    // Créer un input de type file invisible
+    // Créer un élément d'input de type fichier
     const fileInput = document.createElement("input");
     fileInput.type = "file";
     fileInput.accept = ".dxf";
     fileInput.style.display = "none";
+
+    // Ajouter l'élément au DOM
     document.body.appendChild(fileInput);
 
-    // Gérer l'événement de changement de fichier
-    fileInput.onchange = async (event) => {
+    // Gérer l'événement de changement (quand un fichier est sélectionné)
+    fileInput.addEventListener("change", async (event) => {
       const target = event.target as HTMLInputElement;
       const files = target.files;
 
       if (files && files.length > 0) {
-        const file = files[0];
-
-        // Étape 1: Lire le fichier en ArrayBuffer pour l'affichage local et le stockage
-        const fileReader = new FileReader();
-        fileReader.readAsArrayBuffer(file);
-
-        fileReader.onload = async (e) => {
-          if (e.target && e.target.result) {
-            const dxfDataArrayBuffer = e.target.result as ArrayBuffer;
-
-            // Étape 2: Envoyer le fichier à l'API /api/import-dxf
-            const formData = new FormData();
-            formData.append("dxfFile", file);
-            // formData.append('numArcSegments', '24'); // Exemple pour numArcSegments si nécessaire
-
-            const authToken = localStorage.getItem("authToken");
-            const headers: HeadersInit = {};
-            if (authToken) {
-              headers["Authorization"] = `Bearer ${authToken}`;
-            }
-
-            try {
-              const response = await fetch(
-                "http://localhost:30001/api/import-dxf",
-                {
-                  method: "POST",
-                  headers: headers,
-                  body: formData,
-                }
-              );
-
-              const apiData = await response.json();
-
-              if (!response.ok) {
-                console.error(
-                  "Erreur lors de l'importation via l'API:",
-                  apiData.message || response.statusText
-                );
-                showNotification(
-                  apiData.message ||
-                    "Erreur lors de l'importation DXF via API.",
-                  "error"
-                );
-                return;
-              }
-
-              console.log("DXF importé avec succès via API:", apiData);
-              // Ici, vous pouvez utiliser apiData.shapeData et apiData.pixelsPerMm si besoin
-
-              showNotification(
-                `Pièce "${file.name
-                  .split(".")
-                  .slice(0, -1)
-                  .join(
-                    "."
-                  )}" envoyée à l'API avec succès. Rafraîchissement de la liste...`,
-                "success"
-              );
-
-              // Rafraîchir la liste des pièces depuis le serveur
-              await refreshServerFiles();
-            } catch (error) {
-              console.error(
-                "Erreur réseau ou de parsing JSON lors de l'importation DXF:",
-                error
-              );
-              showNotification(
-                "Erreur de communication avec le serveur d'importation DXF.",
-                "error"
-              );
-            }
-          }
-        };
-
-        fileReader.onerror = () => {
-          console.error("Erreur lors de la lecture du fichier DXF localement.");
-          showNotification(
-            "Erreur interne lors de la lecture du fichier.",
-            "error"
-          );
-        };
-      } else {
-        // Nettoyage si aucun fichier n'est sélectionné (bien que l'input devrait le gérer)
-        if (document.body.contains(fileInput)) {
-          document.body.removeChild(fileInput);
-        }
+        await handleFileImport(files[0]);
       }
-      // Nettoyage de l'input après la tentative d'importation
-      // Déplacé ici pour s'assurer qu'il est enlevé même si files est null ou length 0 initialement
-      // ou si l'utilisateur annule la sélection.
-      if (document.body.contains(fileInput)) {
-        document.body.removeChild(fileInput);
-      }
-    };
 
-    // Déclencher le clic sur l'input
+      // Nettoyer
+      document.body.removeChild(fileInput);
+    });
+
+    // Déclencher l'ouverture du sélecteur de fichier
     fileInput.click();
   };
 
   // Fonction pour sélectionner une pièce
   const handleSelectPiece = async (pieceId: number) => {
     setSelectedPiece(pieceId);
-
-    const pieceInState = pieces.find((piece) => piece.id === pieceId);
-    if (pieceInState) {
-      if (pieceInState.dxfData === null) {
-        // Le contenu du fichier DXF n'est pas chargé (vient du listing serveur)
-        // Afficher un état de chargement si vous en avez un (ex: setIsLoading(true))
-        try {
-          console.log(
-            `[DEBUG] Chargement du contenu pour : ${pieceInState.name}`
-          );
-          const fileData = await fetchDxfFileContentFromServer(
-            pieceInState.name
-          );
-
-          if (fileData && fileData.content) {
-            const dxfStringContent = fileData.content;
-            const encoder = new TextEncoder(); // Utilise UTF-8 par défaut, ce qui est généralement correct pour DXF
-            const arrayBuffer: ArrayBuffer = encoder.encode(dxfStringContent)
-              .buffer as ArrayBuffer;
-
-            setCurrentDxfData(arrayBuffer);
-            // Mettre à jour la pièce dans l'état pour éviter de re-fetcher
-            setPieces((prevPieces) =>
-              prevPieces.map((p) =>
-                p.id === pieceId ? { ...p, dxfData: arrayBuffer } : p
-              )
-            );
-            console.log(
-              `[DEBUG] Contenu de '${pieceInState.name}' chargé et mis à jour dans l'état.`
-            );
-            // Optionnel: alert('Contenu du fichier chargé avec succès!');
-          } else {
-            // Notification d'erreur déjà gérée par fetchDxfFileContentFromServer si fileData est null
-            // Mais si fileData est ok mais fileData.content est manquant (cas moins probable avec la logique actuelle de fetchDxfFileContentFromServer)
-            if (fileData && !fileData.content) {
-              showNotification(
-                `Contenu manquant dans la réponse pour '${pieceInState.name}'.`,
-                "error"
-              );
-            }
-            setCurrentDxfData(null);
-          }
-        } catch (error) {
-          // Les erreurs spécifiques à fetchDxfFileContentFromServer sont déjà logguées et notifiées dans cette fonction
-          // Ce catch est pour des erreurs imprévues dans ce bloc try de handleSelectPiece
-          const errorMessage = `Erreur inattendue lors du traitement du fichier '${pieceInState.name}'.`;
-          console.error(
-            `[DEBUG] Échec global du chargement du contenu pour '${pieceInState.name}':`,
-            error
-          );
-          showNotification(errorMessage, "error");
-          setCurrentDxfData(null);
-        } finally {
-          // Cacher l'état de chargement (ex: setIsLoading(false))
-        }
-      } else {
-        // Le contenu DXF est disponible (pièce par défaut ou importée localement et déjà chargée)
-        console.log(
-          `[DEBUG] Affichage du contenu déjà chargé pour : ${pieceInState.name}`
-        );
-        setCurrentDxfData(pieceInState.dxfData);
-      }
-    }
   };
 
-  // Fonction pour lancer la fabrication via l'API
+  // Fonction pour démarrer la fabrication (envoi à la machine)
   const handleStartManufacture = async () => {
-    if (!currentDxfData) {
+    if (selectedPiece === null) {
       showNotification(
-        "Aucun fichier DXF n'est actuellement chargé pour la fabrication.",
-        "info"
+        "Veuillez sélectionner une pièce avant de démarrer la fabrication",
+        "error"
       );
       return;
     }
 
-    let fileName = "default_manufacture_piece.dxf";
-    if (selectedPiece !== null) {
-      const piece = pieces.find((p) => p.id === selectedPiece);
-      if (piece && piece.name) {
-        fileName = piece.name.toLowerCase().endsWith(".dxf")
-          ? piece.name
-          : `${piece.name}.dxf`;
-      }
+    // Trouver la pièce sélectionnée
+    const pieceToManufacture = pieces.find((p) => p.id === selectedPiece);
+    if (!pieceToManufacture) {
+      showNotification("Pièce introuvable", "error");
+      return;
     }
 
-    const dxfFile = new File([currentDxfData], fileName, {
-      type: "application/dxf",
+    // Confirmer l'action avec l'utilisateur
+    showConfirmationModal({
+      title: "Démarrer la fabrication",
+      message: `Êtes-vous sûr de vouloir fabriquer ${pieceCount} exemplaire${
+        pieceCount > 1 ? "s" : ""
+      } de la pièce "${pieceToManufacture.name}" ?`,
+      confirmLabel: "Démarrer",
+      cancelLabel: "Annuler",
+      confirmButtonClassName: styles.startButton,
+      onConfirmAction: async () => {
+        if (!currentDxfData) {
+          showNotification(
+            "Les données du fichier DXF ne sont pas chargées. Veuillez réessayer.",
+            "error"
+          );
+          return;
+        }
+
+        try {
+          const authToken = localStorage.getItem("authToken");
+          const headers: HeadersInit = {}; // Ne pas définir Content-Type ici
+          if (authToken) {
+            headers["Authorization"] = `Bearer ${authToken}`;
+          }
+
+          const formData = new FormData();
+          // Crée un objet File à partir de l'ArrayBuffer
+          const dxfFileObject = new File(
+            [currentDxfData],
+            pieceToManufacture.name,
+            {
+              type: "application/octet-stream", // Type MIME générique, le backend devrait l'ignorer ou le parser
+            }
+          );
+          formData.append("dxfFile", dxfFileObject);
+          formData.append("filename", pieceToManufacture.name); // Peut être utile pour le backend
+          formData.append("quantity", pieceCount.toString());
+
+          // Envoyer la requête pour démarrer la fabrication
+          const response = await fetch(
+            "http://localhost:30001/api/manufacture",
+            {
+              method: "POST",
+              headers: headers, // Contient uniquement Authorization si présent
+              body: formData, // FormData au lieu de JSON.stringify
+            }
+          );
+
+          if (!response.ok) {
+            const errorData = await response
+              .json()
+              .catch(() => ({ message: response.statusText }));
+            const errorMessage =
+              errorData.message ||
+              "Impossible de démarrer la fabrication. Veuillez réessayer.";
+            console.error(
+              "[DEBUG] Erreur lors du démarrage de la fabrication:",
+              errorMessage
+            );
+            showNotification(errorMessage, "error");
+          } else {
+            const data = await response.json();
+            console.log("[DEBUG] Fabrication démarrée avec succès:", data);
+            showNotification(
+              `Fabrication de ${pieceCount} exemplaire${
+                pieceCount > 1 ? "s" : ""
+              } de "${pieceToManufacture.name}" démarrée avec succès!`,
+              "success",
+              5000
+            );
+          }
+        } catch (error) {
+          console.error(
+            "[DEBUG] Erreur réseau lors du démarrage de la fabrication:",
+            error
+          );
+          showNotification(
+            "Erreur lors de la communication avec le serveur",
+            "error"
+          );
+        }
+      },
     });
-    const formData = new FormData();
-    formData.append("dxfFile", dxfFile);
-
-    try {
-      const authToken = localStorage.getItem("authToken");
-      const headers: HeadersInit = {};
-
-      if (authToken) {
-        headers["Authorization"] = `Bearer ${authToken}`;
-      }
-
-      const response = await fetch("http://localhost:30001/api/manufacture", {
-        method: "POST",
-        headers: headers,
-        body: formData,
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        console.error(
-          "Erreur lors du lancement de la fabrication:",
-          data.message || response.statusText
-        );
-        showNotification(
-          `Erreur de fabrication: ${data.message || response.statusText}`,
-          "error"
-        );
-        return;
-      }
-
-      console.log("Processus de fabrication terminé:", data);
-      showNotification(
-        "Fabrication lancée avec succès! G-code généré.",
-        "success"
-      );
-      // Afficher des informations de 'data' à l'utilisateur si pertinent
-      // Par exemple, data.gcode, data.arduinoResponse.message
-    } catch (error) {
-      console.error(
-        "Erreur réseau ou de parsing JSON lors de la communication avec l'API de fabrication:",
-        error
-      );
-      showNotification(
-        "Erreur de communication avec le serveur de fabrication.",
-        "error"
-      );
-    }
   };
 
   // Fonction pour supprimer un fichier DXF du serveur
@@ -480,7 +577,9 @@ const MainPage: React.FC = () => {
   ): Promise<boolean> => {
     try {
       const authToken = localStorage.getItem("authToken");
-      const headers: HeadersInit = {};
+      const headers: HeadersInit = {
+        "Content-Type": "application/json",
+      };
       if (authToken) {
         headers["Authorization"] = `Bearer ${authToken}`;
       }
@@ -499,95 +598,64 @@ const MainPage: React.FC = () => {
           .json()
           .catch(() => ({ message: response.statusText }));
         const errorMessage =
-          errorData.message || "Impossible de supprimer le fichier du serveur.";
+          errorData.message ||
+          `Impossible de supprimer le fichier '${filename}'.`;
         console.error(
-          `[DEBUG] Erreur lors de la suppression du fichier DXF '${filename}' sur le serveur:`,
+          `[DEBUG] Erreur lors de la suppression du fichier DXF '${filename}':`,
           errorMessage
         );
         showNotification(errorMessage, "error");
         return false;
       }
 
-      console.log(
-        `[DEBUG] Fichier DXF '${filename}' supprimé avec succès du serveur.`
-      );
-      return true;
+      console.log(`[DEBUG] Fichier '${filename}' supprimé avec succès.`);
+      return true; // Suppression réussie
     } catch (error) {
-      const errorMessage =
-        "Erreur de communication lors de la tentative de suppression du fichier.";
+      const errorMessage = `Erreur réseau lors de la suppression du fichier '${filename}'.`;
       console.error(
-        `[DEBUG] Erreur réseau ou de parsing JSON lors de la suppression du fichier DXF '${filename}':`,
+        `[DEBUG] Erreur réseau lors de la suppression du fichier DXF '${filename}':`,
         error
       );
       showNotification(errorMessage, "error");
-      return false;
+      return false; // Échec de la suppression
     }
   };
 
-  // Fonction pour gérer la suppression d'une pièce
+  // Fonction pour supprimer une pièce
   const handleDeletePiece = async (pieceIdToDelete: number) => {
-    console.log(
-      `[DEBUG] handleDeletePiece: Début pour pieceId: ${pieceIdToDelete}`
-    );
+    // Trouver la pièce à supprimer
     const pieceToDelete = pieces.find((p) => p.id === pieceIdToDelete);
-    console.log(
-      `[DEBUG] handleDeletePiece: pieceToDelete (après find):`,
-      pieceToDelete
-    );
-
     if (!pieceToDelete) {
-      console.error(
-        "[DEBUG] handleDeletePiece: Pièce non trouvée dans l'état. ID:",
-        pieceIdToDelete
-      );
-      showNotification(
-        "Erreur: Pièce non trouvée pour la suppression.",
-        "error"
-      );
+      showNotification("Pièce introuvable", "error");
       return;
     }
-    console.log("[DEBUG] handleDeletePiece: Pièce trouvée.");
 
-    console.log(
-      "[DEBUG] handleDeletePiece: Avant affichage modal de confirmation."
-    );
-
+    // Confirmer la suppression
     showConfirmationModal({
-      title: "Confirmation de suppression",
-      message: `Êtes-vous sûr de vouloir supprimer la pièce "${pieceToDelete.name}" ? Cette action est irréversible.`,
-      confirmText: "Supprimer",
-      cancelText: "Annuler",
+      title: "Supprimer la pièce",
+      message: `Êtes-vous sûr de vouloir supprimer la pièce "${pieceToDelete.name}" ?`,
+      confirmLabel: "Supprimer",
+      cancelLabel: "Annuler",
+      confirmButtonClassName: "btn btn-danger",
       onConfirmAction: async () => {
-        console.log(
-          "[DEBUG] handleDeletePiece (modal): Utilisateur a confirmé. Appel de deleteDxfFileFromServer."
-        );
+        // Si c'est la pièce actuellement sélectionnée, désélectionner
+        if (selectedPiece === pieceIdToDelete) {
+          setSelectedPiece(null);
+          setCurrentDxfData(null);
+        }
+
+        // Supprimer le fichier du serveur
         const success = await deleteDxfFileFromServer(pieceToDelete.name);
         if (success) {
-          console.log(
-            "[DEBUG] handleDeletePiece (modal): Suppression serveur réussie. Mise à jour de l'état."
-          );
+          // Mettre à jour l'état local en supprimant la pièce
           setPieces((prevPieces) =>
             prevPieces.filter((p) => p.id !== pieceIdToDelete)
           );
-          if (selectedPiece === pieceIdToDelete) {
-            setSelectedPiece(null);
-            setCurrentDxfData(null);
-          }
           showNotification(
-            `Pièce "${pieceToDelete.name}" supprimée avec succès.`,
+            `Pièce "${pieceToDelete.name}" supprimée avec succès!`,
             "success"
           );
-        } else {
-          console.log(
-            "[DEBUG] handleDeletePiece (modal): Suppression serveur échouée. Notification déjà gérée par deleteDxfFileFromServer."
-          );
         }
-      },
-      onCancelAction: () => {
-        console.log(
-          "[DEBUG] handleDeletePiece (modal): Utilisateur a annulé la suppression."
-        );
-        showNotification("Suppression annulée.", "info", 3000);
       },
     });
   };
@@ -601,46 +669,258 @@ const MainPage: React.FC = () => {
     setNotification({ message, type, duration });
   };
 
+  // Fonction pour fermer la notification
   const closeNotification = () => {
     setNotification(null);
   };
 
-  // Fonction pour afficher le modal de confirmation
+  // Fonction pour afficher un modal de confirmation
   const showConfirmationModal = (data: ConfirmationModalData) => {
-    console.log("[DEBUG] showConfirmationModal: Appelée avec data:", data);
-    // Assurez-vous que confirmButtonColor n'est pas passé si le modal CSS ne l'utilise pas
-    const { confirmButtonColor, ...restData } = data as any; // Astuce pour enlever une prop
-    setConfirmationModalData(restData);
+    setConfirmationModalData(data);
     setIsConfirmationModalOpen(true);
-    console.log(
-      "[DEBUG] showConfirmationModal: isConfirmationModalOpen devrait être true maintenant."
-    );
   };
 
+  // Fonction pour gérer la confirmation du modal
   const handleConfirm = async () => {
+    setIsConfirmationModalOpen(false);
     if (confirmationModalData?.onConfirmAction) {
       await confirmationModalData.onConfirmAction();
     }
-    setIsConfirmationModalOpen(false);
-    setConfirmationModalData(null);
   };
 
+  // Fonction pour gérer l'annulation du modal
   const handleCancel = async () => {
+    setIsConfirmationModalOpen(false);
     if (confirmationModalData?.onCancelAction) {
       await confirmationModalData.onCancelAction();
     }
-    setIsConfirmationModalOpen(false);
-    setConfirmationModalData(null);
+  };
+
+  // Fonction pour gérer la déconnexion
+  const handleLogout = () => {
+    // Montrer un modal de confirmation pour la déconnexion
+    showConfirmationModal({
+      title: "Déconnexion",
+      message: "Êtes-vous sûr de vouloir vous déconnecter ?",
+      confirmLabel: "Déconnexion",
+      cancelLabel: "Annuler",
+      confirmButtonClassName: styles.logoutButton,
+      onConfirmAction: () => {
+        // Supprimer les informations d'authentification
+        localStorage.removeItem("authToken");
+        localStorage.removeItem("userData");
+
+        // Rediriger vers la page d'authentification
+        window.location.href = "/authentication";
+      },
+    });
+  };
+
+  // Rendu de la liste des pièces
+  const renderPiecesList = () => {
+    if (pieces.length === 0) {
+      // Afficher un message si aucune pièce n'est disponible
+      return (
+        <div className={styles.emptyList}>
+          <p>Aucune pièce disponible</p>
+          <p>Importez une pièce pour commencer</p>
+        </div>
+      );
+    }
+
+    // Trier les pièces pour avoir les plus récentes en haut (en considérant que l'id contient un timestamp)
+    const sortedPieces = [...pieces].sort((a, b) => b.id - a.id);
+
+    return (
+      <>
+        {sortedPieces.map((piece) => (
+          <button
+            key={piece.id}
+            className={`${styles.pieceButton} ${
+              selectedPiece === piece.id ? styles.pieceButtonActive : ""
+            }`}
+            onClick={() => handleSelectPiece(piece.id)}
+          >
+            {piece.name}
+            <button
+              className={styles.deleteButton}
+              onClick={(e) => {
+                e.stopPropagation(); // Empêche le déclenchement du onClick du parent
+                handleDeletePiece(piece.id);
+              }}
+              aria-label={`Supprimer ${piece.name}`}
+            >
+              ×
+            </button>
+          </button>
+        ))}
+      </>
+    );
+  };
+
+  // Gestionnaires d'événements pour le drag and drop
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const file = e.dataTransfer.files[0];
+      handleFileImport(file);
+    }
   };
 
   return (
     <AuthGuard>
-      <>
-        <Head>
-          <title>Importer / Création de la pièce</title>
-        </Head>
-
-        {/* Affichage de la Notification */}
+      <Head>
+        <title>Application de Découpe - Atelier des Composites</title>
+      </Head>
+      <div
+        className={styles.pageContainer}
+        onDragOver={handleDragOver}
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        ref={dropZoneRef}
+      >
+        {isDragging && (
+          <div className={styles.dropOverlay}>
+            <div className={styles.dropMessage}>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="48"
+                height="48"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="17 8 12 3 7 8"></polyline>
+                <line x1="12" y1="3" x2="12" y2="15"></line>
+              </svg>
+              <p>Déposez votre fichier DXF ici</p>
+            </div>
+          </div>
+        )}
+        <header className={styles.header}>
+          <div className={styles.headerLeft}>
+            <h1>Atelier des Composites</h1>
+          </div>
+          <div className={styles.headerRight}>
+            <button
+              className={styles.logoutButton}
+              onClick={handleLogout}
+              aria-label="Se déconnecter"
+            >
+              Se déconnecter
+            </button>
+          </div>
+        </header>
+        <div className={styles.mainAppContainer}>
+          <aside className={styles.sidebarLeft}>
+            <h2>Anciennes pièces</h2>
+            <div className={styles.piecesList}>{renderPiecesList()}</div>
+            <button
+              className={styles.importButton}
+              onClick={handleImportPiece}
+              aria-label="Importer une nouvelle pièce"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="17 8 12 3 7 8"></polyline>
+                <line x1="12" y1="3" x2="12" y2="15"></line>
+              </svg>
+              <span>Importer</span>
+            </button>
+          </aside>
+          <section className={styles.viewerSection}>
+            <h2>Visualisation de pièce</h2>
+            {currentDxfData ? (
+              <DxfViewer dxfData={currentDxfData} />
+            ) : (
+              <div className={styles.viewerPlaceholder}>
+                <p>Sélectionnez une pièce pour la visualiser</p>
+              </div>
+            )}
+          </section>
+          <aside className={styles.sidebarRight}>
+            <h2>Paramètre de lancement</h2>
+            <div className={styles.paramGroup}>
+              <label htmlFor="pieceCount">Nombre de pièces :</label>
+              <div className={styles.counterContainer}>
+                <div className={styles.counterButtons}>
+                  <button
+                    className={styles.counterButton}
+                    onClick={() => incrementPieceCount(-1)}
+                    disabled={pieceCount <= 1}
+                    aria-label="Diminuer le nombre de pièces"
+                  >
+                    -
+                  </button>
+                  <input
+                    id="pieceCount"
+                    type="number"
+                    min="1"
+                    value={pieceCount}
+                    onChange={(e) =>
+                      setPieceCount(Math.max(1, parseInt(e.target.value) || 1))
+                    }
+                    className={styles.paramInput}
+                    aria-label="Nombre de pièces à fabriquer"
+                  />
+                  <button
+                    className={styles.counterButton}
+                    onClick={() => incrementPieceCount(1)}
+                    aria-label="Augmenter le nombre de pièces"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div className={styles.actionButtons}>
+              <button
+                className={styles.startButton}
+                onClick={handleStartManufacture}
+                disabled={selectedPiece === null}
+                aria-label="Démarrer la fabrication"
+              >
+                Démarrer la fabrication
+              </button>
+            </div>
+          </aside>
+        </div>
         {notification && (
           <Notification
             message={notification.message}
@@ -649,111 +929,21 @@ const MainPage: React.FC = () => {
             onClose={closeNotification}
           />
         )}
-
-        {/* Affichage du Modal de Confirmation */}
         {isConfirmationModalOpen && confirmationModalData && (
           <ConfirmationModal
             isOpen={isConfirmationModalOpen}
-            title={confirmationModalData.title || "Titre de Confirmation"}
-            message={confirmationModalData.message || "Êtes-vous sûr ?"}
-            confirmText={confirmationModalData.confirmText}
-            cancelText={confirmationModalData.cancelText}
+            title={confirmationModalData.title}
+            message={confirmationModalData.message}
+            confirmLabel={confirmationModalData.confirmLabel}
+            cancelLabel={confirmationModalData.cancelLabel}
+            confirmButtonClassName={
+              confirmationModalData.confirmButtonClassName
+            }
             onConfirm={handleConfirm}
             onCancel={handleCancel}
           />
         )}
-
-        <div className={styles.pageContainer}>
-          <header className={styles.header}>
-            <h1>Importer / Création de la pièce</h1>
-          </header>
-          <div className={styles.mainAppContainer}>
-            <aside className={styles.sidebarLeft}>
-              <h2>Anciennes pièces</h2>
-              {pieces.map((piece) => (
-                <div key={piece.id} className={styles.pieceEntry}>
-                  <button
-                    className={`${styles.pieceButton} ${
-                      selectedPiece === piece.id ? styles.pieceButtonActive : ""
-                    }`}
-                    onClick={() => handleSelectPiece(piece.id)}
-                  >
-                    {piece.name}
-                  </button>
-                  <button
-                    className={styles.deletePieceButton}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeletePiece(piece.id);
-                    }}
-                    title={`Supprimer ${piece.name}`}
-                  >
-                    🗑️
-                  </button>
-                </div>
-              ))}
-              <button
-                className={styles.importButton}
-                onClick={handleImportPiece}
-              >
-                IMPORTER UNE PIECE
-              </button>
-            </aside>
-            <main className={styles.viewerSection}>
-              <h2>Viewer</h2>
-              <div className={`${styles.viewerPlaceholder}`}>
-                <DxfViewer dxfData={currentDxfData} />
-              </div>
-            </main>
-            <aside className={styles.sidebarRight}>
-              <h2>Paramètre de lancement</h2>
-              <div className={styles.paramGroup}>
-                <label htmlFor="piece-num">N° de piece :</label>
-                <input
-                  type="text"
-                  id="piece-num"
-                  name="piece-num"
-                  className={styles.paramInput}
-                />
-              </div>
-              <div className={styles.paramGroup}>
-                <label htmlFor="temps">Temps :</label>
-                <input
-                  type="text"
-                  id="temps"
-                  name="temps"
-                  className={styles.paramInput}
-                />
-              </div>
-              <div className={styles.paramGroup}>
-                <label htmlFor="metrage">Metrage :</label>
-                <input
-                  type="text"
-                  id="metrage"
-                  name="metrage"
-                  className={styles.paramInput}
-                />
-              </div>
-              <div className={styles.paramGroup}>
-                <label htmlFor="prix-matiere">Prix matière :</label>
-                <input
-                  type="text"
-                  id="prix-matiere"
-                  name="prix-matiere"
-                  className={styles.paramInput}
-                />
-              </div>
-              <button className={styles.testButton}>Tester la pièce</button>
-              <button
-                className={styles.startButton}
-                onClick={handleStartManufacture}
-              >
-                START
-              </button>
-            </aside>
-          </div>
-        </div>
-      </>
+      </div>
     </AuthGuard>
   );
 };

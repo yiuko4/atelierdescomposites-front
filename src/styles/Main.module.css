@@ -1,54 +1,79 @@
 .pageContainer {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
-  height: 100vh; /* Utiliser vh au lieu de % pour garantir 100% de la hauteur de la fenêtre */
+  height: 100vh;
   width: 100%;
-  background-color: #f0f0f0;
-  color: #333;
-  overflow: hidden;
-  position: absolute; /* Position absolue pour couvrir toute la fenêtre */
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  position: relative;
 }
 
 .header {
-  background-color: #003399; /* Dark blue */
+  background-color: var(--color-primary);
   color: white;
-  padding: 15px 30px;
-  text-align: left;
+  padding: 0 2rem;
+  height: var(--header-height);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.1);
+  z-index: 10;
+  background-image: linear-gradient(
+    to right,
+    var(--color-primary-dark),
+    var(--color-primary)
+  );
+}
+
+.headerLeft {
+  display: flex;
+  align-items: center;
+}
+
+.headerRight {
+  display: flex;
+  align-items: center;
 }
 
 .header h1 {
   margin: 0;
-  font-size: 1.5em;
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: white;
 }
 
 .mainAppContainer {
   display: flex;
-  flex: 1 1 auto;
-  height: calc(100vh - 60px); /* Ajustement pour la hauteur du header en utilisant vh */
-  padding: 20px;
-  gap: 20px;
+  flex: 1;
+  height: calc(100vh - var(--header-height));
+  padding: 1.5rem;
+  gap: 2rem;
   overflow: hidden;
+  background-color: #f0f5fa;
 }
 
 .sidebarLeft,
 .sidebarRight,
 .viewerSection {
-  background-color: #e9ecef; /* Light grey for sections */
-  padding: 20px;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  background-color: var(--color-bg-section);
+  padding: 1.5rem;
+  border-radius: var(--border-radius);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.07);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(0, 0, 0, 0.05);
 }
 
 .sidebarLeft {
   flex: 1;
+  min-width: 250px;
+  max-width: 300px;
+  overflow: visible;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  position: relative;
 }
 
 .sidebarLeft h2,
@@ -56,129 +81,588 @@
 .viewerSection h2 {
   text-align: center;
   margin-top: 0;
-  margin-bottom: 20px;
-  color: #333;
+  margin-bottom: 1.25rem;
+  font-size: 1.25rem;
+  color: var(--color-primary);
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  font-weight: 600;
+}
+
+.sidebarLeft h2 {
+  margin-bottom: 0.75rem;
+}
+
+/* Liste des pièces avec défilement vertical */
+.piecesList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  max-height: calc(100vh - 350px);
+  overflow-y: auto;
+  padding-right: 0.5rem;
+  flex: 1;
+}
+
+/* Style pour la barre de défilement */
+.piecesList::-webkit-scrollbar {
+  width: 6px;
+}
+
+.piecesList::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 10px;
+}
+
+.piecesList::-webkit-scrollbar-thumb {
+  background: var(--color-primary-light);
+  border-radius: 10px;
+}
+
+.piecesList::-webkit-scrollbar-thumb:hover {
+  background: var(--color-primary);
+}
+
+.piecesList {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-primary-light) rgba(0, 0, 0, 0.05);
 }
 
 .pieceButton {
-  padding: 15px;
-  border: 1px solid #ccc;
-  border-radius: 5px;
-  background-color: #f8f9fa;
+  padding: 0.75rem 1rem;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 4px;
+  background-color: white;
   cursor: pointer;
-  text-align: center;
+  text-align: left;
   font-weight: 500;
+  transition: all var(--transition-speed) ease;
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  font-size: 0.85rem;
+  word-break: break-word;
+  max-width: 100%;
 }
 
 .pieceButton:hover {
-  background-color: #e2e6ea;
+  background-color: rgba(0, 0, 0, 0.02);
+  transform: translateY(-2px);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.08);
+  border-color: rgba(0, 0, 0, 0.12);
 }
 
 .pieceButtonActive {
-  background-color: #007bff;
+  background-color: var(--color-primary);
   color: white;
-  border-color: #007bff;
+  border-color: var(--color-primary);
+  box-shadow: 0 3px 8px rgba(0, 85, 164, 0.2);
+}
+
+.pieceButtonActive:hover {
+  background-color: var(--color-primary-light);
+}
+
+/* Bouton de suppression pour chaque pièce */
+.deleteButton {
+  background: none;
+  border: none;
+  color: var(--color-danger);
+  opacity: 0.7;
+  font-size: 1rem;
+  padding: 0.25rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-speed) ease;
+}
+
+.deleteButton:hover {
+  opacity: 1;
+  background-color: rgba(220, 53, 69, 0.1);
+}
+
+.pieceButtonActive .deleteButton {
+  color: white;
+  opacity: 0.9;
 }
 
 .importButton {
-  padding: 20px;
-  border: 2px solid #007bff; /* Blue border */
-  border-radius: 5px;
-  background-color: white;
-  color: #007bff;
-  font-size: 1.1em;
-  font-weight: bold;
+  padding: 1rem;
+  border: 2px dashed var(--color-primary-light);
+  border-radius: var(--border-radius);
+  background-color: rgba(0, 85, 164, 0.05);
+  color: var(--color-primary);
+  font-size: 1rem;
+  font-weight: 600;
   cursor: pointer;
-  margin-top: auto; /* Pushes to the bottom */
+  margin-top: auto;
+  text-align: center;
+  transition: all var(--transition-speed) ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 0;
+  margin-top: 1rem;
 }
 
 .importButton:hover {
-  background-color: #e7f3ff;
+  background-color: rgba(0, 85, 164, 0.1);
+  border-color: var(--color-primary);
+  transform: translateY(-2px);
+  box-shadow: 0 3px 8px rgba(0, 85, 164, 0.2);
+}
+
+.importButton:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(0, 85, 164, 0.2);
+}
+
+.importButton svg {
+  width: 20px;
+  height: 20px;
+}
+
+.importButton span {
+  display: inline-block;
+  margin-left: 8px;
+  position: relative;
+  z-index: 2;
+}
+
+.importButton:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 2px rgba(0, 85, 164, 0.2);
 }
 
 .viewerSection {
-  flex: 3;
+  flex: 2;
+  height: 100%;
   display: flex;
   flex-direction: column;
+  position: relative;
+  min-width: 0;
+  min-height: 400px;
 }
 
 .viewerPlaceholder {
-  flex-grow: 1;
-  background-color: #d0d0d0; /* Darker grey for viewer area */
-  border-radius: 5px;
   display: flex;
+  flex-direction: column;
   justify-content: center;
   align-items: center;
-  color: #666;
-  font-style: italic;
-  position: relative;
-  overflow: hidden;
-  width: 100%;
-  height: 100%;
+  flex: 1;
+  background-color: rgba(0, 0, 0, 0.02);
+  border-radius: 4px;
+  animation: fadeIn 0.5s ease;
+}
+
+.viewerPlaceholder p {
+  color: var(--color-text-light);
+  font-size: 1rem;
+  text-align: center;
+  padding: 2rem;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .sidebarRight {
   flex: 1.5;
+  min-width: 280px;
+  max-width: 350px;
   display: flex;
   flex-direction: column;
-  gap: 15px;
+  gap: 1rem;
+  overflow-y: auto;
 }
 
 .paramGroup {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 0.75rem;
+  background-color: rgba(0, 0, 0, 0.02);
+  padding: 1.25rem;
+  border-radius: var(--border-radius);
+  border: 1px solid rgba(0, 0, 0, 0.05);
 }
 
 .paramGroup label {
-  font-size: 0.9em;
-  color: #555;
+  font-size: 0.9rem;
+  color: var(--color-text);
   font-weight: 500;
+  display: flex;
+  justify-content: space-between;
 }
 
 .paramInput {
-  padding: 10px;
-  border: 1px solid #ced4da;
-  border-radius: 5px;
-  background-color: #f8f9fa;
+  padding: 0.75rem;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: calc(var(--border-radius) / 2);
+  background-color: white;
+  transition: all var(--transition-speed) ease;
+  font-size: 0.95rem;
 }
 
-.testButton,
-.startButton {
-  padding: 15px;
-  border-radius: 5px;
-  font-size: 1em;
-  font-weight: bold;
-  cursor: pointer;
-  color: white;
-  border: none;
+.paramInput:focus {
+  border-color: var(--color-primary-light);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(0, 85, 164, 0.1);
+}
+
+.actionButtons {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  margin-top: auto;
+  padding-top: 1.5rem;
+  margin-top: 2rem;
 }
 
 .testButton {
-  background-color: #007bff; /* Blue */
+  padding: 1rem;
+  border-radius: 4px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+  transition: all var(--transition-speed) ease-in-out;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  letter-spacing: 0.5px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+  background-color: var(--color-primary);
+  color: white;
+  min-height: 48px;
+  width: 100%;
 }
 
 .testButton:hover {
-  background-color: #0056b3;
+  background-color: var(--color-primary-light);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
 }
 
 .startButton {
-  background-color: #007bff; /* Blue */
-  margin-top: 10px;
+  width: 100%;
+  padding: 1rem;
+  margin-top: 1rem;
+  background-color: var(--color-primary);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all var(--transition-speed) ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
 }
 
 .startButton:hover {
-  background-color: #0056b3;
+  background-color: var(--color-primary-light);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+}
+
+.startButton:disabled {
+  background-color: var(--color-secondary);
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+  opacity: 0.7;
+}
+
+/* Animation pour les notifications */
+@keyframes slideIn {
+  from {
+    transform: translateY(-20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
 }
 
 /* Responsive Adjustments */
-@media (max-width: 768px) {
+@media (max-width: 1200px) {
   .mainAppContainer {
-    flex-direction: column;
+    gap: 1rem;
+    padding: 1rem;
   }
 
   .sidebarLeft,
   .sidebarRight {
-    flex-basis: auto; /* Allow them to take natural height */
+    min-width: 220px;
+  }
+}
+
+@media (max-width: 992px) {
+  .mainAppContainer {
+    flex-wrap: wrap;
+  }
+
+  .viewerSection {
+    flex: 1 1 100%;
+    order: -1;
+    height: 50%;
+    min-height: 300px;
+  }
+
+  .sidebarLeft,
+  .sidebarRight {
+    flex: 1 1 calc(50% - 1rem);
+    height: auto;
+  }
+}
+
+@media (max-width: 768px) {
+  .mainAppContainer {
+    flex-direction: column;
+    overflow-y: auto;
+    height: auto;
+    max-height: calc(100vh - var(--header-height));
+  }
+
+  .sidebarLeft,
+  .viewerSection,
+  .sidebarRight {
+    width: 100%;
+    max-width: none;
+    min-height: auto;
+  }
+
+  .viewerSection {
+    height: 350px;
+  }
+}
+
+.emptyList {
+  padding: 2rem 1rem;
+  text-align: center;
+  color: var(--color-text-light);
+  border: 1px dashed rgba(0, 0, 0, 0.12);
+  border-radius: var(--border-radius);
+  background-color: rgba(0, 0, 0, 0.01);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 150px;
+}
+
+.emptyList p {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.emptyList p:first-child {
+  font-weight: 500;
+}
+
+.counterContainer {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  margin-top: 0.5rem;
+}
+
+.counterButtons {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.counterButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  background-color: var(--color-primary);
+  color: white;
+  font-size: 1.25rem;
+  font-weight: bold;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all var(--transition-speed) ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.counterButton:hover {
+  background-color: var(--color-primary-light);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+}
+
+.counterButton:active {
+  transform: translateY(0);
+}
+
+.counterButton:disabled {
+  background-color: var(--color-secondary);
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.counterButton:disabled:hover {
+  background-color: var(--color-secondary);
+  transform: none;
+  box-shadow: none;
+}
+
+.paramGroup input[type="number"] {
+  text-align: center;
+  font-size: 1rem;
+  padding: 0.5rem;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+  width: calc(100% - 80px);
+  margin: 0 0.5rem;
+}
+
+.paramGroup input[type="number"]::-webkit-inner-spin-button,
+.paramGroup input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.paramGroup input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+.moreItems {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem;
+  margin-top: 0.5rem;
+  background-color: rgba(0, 0, 0, 0.05);
+  border-radius: 4px;
+  font-size: 0.8rem;
+  color: var(--color-text-light);
+  font-style: italic;
+}
+
+.logoutButton {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background-color: var(--color-danger);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-weight: 500;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all var(--transition-speed) ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.logoutButton:hover {
+  background-color: #c82333;
+  transform: translateY(-2px);
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
+}
+
+.logoutButton:active {
+  transform: translateY(0);
+}
+
+.dropOverlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 85, 164, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.3s ease;
+}
+
+.dropMessage {
+  background-color: white;
+  padding: 2.5rem;
+  border-radius: var(--border-radius);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  max-width: 400px;
+  text-align: center;
+  animation: dropIn 0.4s ease;
+}
+
+.dropMessage svg {
+  color: var(--color-primary);
+  margin-bottom: 0.5rem;
+  animation: bounce 1s ease infinite;
+}
+
+.dropMessage p {
+  font-size: 1.25rem;
+  font-weight: 500;
+  color: var(--color-text);
+  margin: 0;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes dropIn {
+  from {
+    transform: translateY(-20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes bounce {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
   }
 }

@@ -7,10 +7,9 @@ export interface ConfirmationModalProps {
   message: string;
   onConfirm: () => void;
   onCancel: () => void;
-  confirmText?: string;
-  cancelText?: string;
-  // La prop confirmButtonColor n'est plus nécessaire avec les modules CSS si le style est fixe
-  // Si vous voulez la garder pour surcharger les styles, il faudra l'adapter
+  confirmLabel?: string;
+  cancelLabel?: string;
+  confirmButtonClassName?: string;
 }
 
 const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
@@ -19,8 +18,9 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
   message,
   onConfirm,
   onCancel,
-  confirmText = "Confirmer",
-  cancelText = "Annuler",
+  confirmLabel = "Confirmer",
+  cancelLabel = "Annuler",
+  confirmButtonClassName,
 }) => {
   // console.log('[TAILWIND MODAL] Rendu du modal Tailwind, isOpen:', isOpen); // TEMPORAIREMENT COMMENTÉ
   if (!isOpen) {
@@ -30,6 +30,21 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
   return (
     <div className={styles.overlay}>
       <div className={styles.modal}>
+        <div className={styles.icon}>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+          </svg>
+        </div>
         <h3 className={styles.title}>{title}</h3>
         <p className={styles.message}>{message}</p>
         <div className={styles.actions}>
@@ -37,13 +52,15 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
             onClick={onCancel}
             className={`${styles.button} ${styles.cancelButton}`}
           >
-            {cancelText}
+            {cancelLabel}
           </button>
           <button
             onClick={onConfirm}
-            className={`${styles.button} ${styles.confirmButton}`}
+            className={`${styles.button} ${styles.confirmButton} ${
+              confirmButtonClassName || ""
+            }`}
           >
-            {confirmText}
+            {confirmLabel}
           </button>
         </div>
       </div>
