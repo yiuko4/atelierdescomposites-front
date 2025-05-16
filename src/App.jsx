@@ -53,6 +53,7 @@ function App() {
   const [draggingVertexInfo, setDraggingVertexInfo] = useState(null);
   const [isOrthogonalMode, setIsOrthogonalMode] = useState(false);
   const [snappedPreviewPoint, setSnappedPreviewPoint] = useState(null);
+  const [isInProduction, setIsInProduction] = useState(false); // Nouvel état pour la production
 
   // États pour l'annulation et le rétablissement
   const [history, setHistory] = useState([]); // Historique des états précédents
@@ -711,6 +712,7 @@ function App() {
         alert(
           `Opération réussie: ${result.message}\nFichier original: ${result.originalFilename}\nSéquence: ${result.sequenceFile}`
         );
+        setIsInProduction(true); // Mettre à jour l'état de production
       } else {
         console.error(
           "Erreur de l'API lors du traitement direct du SVG:",
@@ -721,6 +723,7 @@ function App() {
             result.message || "Erreur inconnue du serveur"
           }`
         );
+        // Laisser isInProduction à false ou le remettre à false si nécessaire
       }
     } catch (error) {
       console.error(
@@ -728,6 +731,54 @@ function App() {
         error
       );
       alert(`Erreur de connexion au serveur: ${error.message}`);
+      // Laisser isInProduction à false ou le remettre à false si nécessaire
+    }
+  };
+
+  const handleStopProduction = async () => {
+    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "";
+    const apiUrlPath = `${apiBaseUrl}/api/emergency/stop`;
+
+    console.log("Tentative d'arrêt de la production via API...");
+
+    try {
+      const response = await fetch(apiUrlPath, {
+        method: "POST",
+        // Pas de corps nécessaire si l'API n'en attend pas pour un simple arrêt
+        // Headers peuvent être ajoutés si nécessaire (ex: Authorization)
+      });
+
+      if (response.ok) {
+        const result = await response.json().catch(() => ({})); // Essayer de parser JSON, sinon objet vide
+        console.log("Arrêt de production réussi (API):", result);
+        alert(result.message || "La production a été arrêtée avec succès.");
+        setIsInProduction(false);
+      } else {
+        const errorResult = await response.json().catch(() => ({
+          message: `Erreur ${response.status} lors de l'arrêt de la production.`,
+        }));
+        console.error(
+          "Erreur de l'API lors de l'arrêt de production:",
+          errorResult
+        );
+        alert(
+          errorResult.message ||
+            `Erreur ${response.status} de l\'API lors de la tentative d\'arrêt.`
+        );
+        // Optionnel: garder isInProduction à true si l'arrêt API échoue et qu'on veut forcer une nouvelle tentative.
+        // Pour l'instant, on le remet à false pour débloquer l'UI.
+        setIsInProduction(false);
+      }
+    } catch (error) {
+      console.error(
+        "Erreur de connexion lors de la tentative d'arrêt de production:",
+        error
+      );
+      alert(
+        `Erreur de connexion au serveur lors de la tentative d\'arrêt: ${error.message}`
+      );
+      // Idem, on remet à false pour débloquer l'UI
+      setIsInProduction(false);
     }
   };
 
@@ -985,13 +1036,20 @@ function App() {
             </div>
 
             {/* Bouton Exporter SVG poussé en bas */}
-            <div className="mt-auto p-3 bg-blue-50 rounded-md border border-blue-100">
+            <div className="mt-auto p-3 bg-blue-50 rounded-md border border-blue-100 flex flex-col gap-2">
               <button
                 onClick={exportToSvg}
-                disabled={shapes.length === 0}
-                className="w-full px-4 py-2 bg-teal-500 text-white rounded-md hover:bg-teal-600 disabled:bg-gray-200 disabled:text-gray-400 transition-colors duration-150 shadow-sm"
+                disabled={shapes.length === 0 || isInProduction} // Désactivé si en production ou pas de formes
+                className="w-full px-4 py-2 bg-teal-500 text-white rounded-md hover:bg-teal-600 disabled:bg-gray-400 disabled:text-gray-500 disabled:cursor-not-allowed transition-colors duration-150 shadow-sm"
               >
-                PRODUCTION
+                {isInProduction ? "PRODUCTION EN COURS..." : "PRODUCTION"}
+              </button>
+              <button
+                onClick={handleStopProduction}
+                disabled={!isInProduction} // Activé seulement si en production
+                className="w-full px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 disabled:bg-gray-400 disabled:text-gray-500 disabled:cursor-not-allowed transition-colors duration-150 shadow-sm"
+              >
+                STOP
               </button>
             </div>
           </div>
