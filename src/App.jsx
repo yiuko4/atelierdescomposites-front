@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import SvgCanvas from "./components/SvgCanvas";
 import PieceCreationVisualizer from "./components/PieceCreationVisualizer";
+import SvgCanvas from "./components/SvgCanvas";
 import "./index.css";
 
 // --- Fonctions utilitaires pour la géométrie vectorielle ---
@@ -49,26 +49,26 @@ const MIN_ANGLE_FOR_PRODUCTION = 65; // Angle minimum requis pour la production
 
 function App() {
   const [isPopupOpen, setIsPopupOpen] = useState(false);
-const [etapes, setEtapes] = useState([]);
-const [isLoading, setIsLoading] = useState(true);
-const [error, setError] = useState(null);
+  const [etapes, setEtapes] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-useEffect(() => {
-  fetch("/etape-test.json")
-    .then((res) => {
-      if (!res.ok) throw new Error("Erreur chargement JSON");
-      return res.json();
-    })
-    .then((data) => {
-      setEtapes(data);
-      setIsLoading(false);
-    })
-    .catch((err) => {
-      console.error(err);
-      setError(err.message);
-      setIsLoading(false);
-    });
-}, []);
+  useEffect(() => {
+    fetch("/etape-test.json")
+      .then((res) => {
+        if (!res.ok) throw new Error("Erreur chargement JSON");
+        return res.json();
+      })
+      .then((data) => {
+        setEtapes(data);
+        setIsLoading(false);
+      })
+      .catch((err) => {
+        console.error(err);
+        setError(err.message);
+        setIsLoading(false);
+      });
+  }, []);
 
   const [shapes, setShapes] = useState([]);
   const [currentPoints, setCurrentPoints] = useState([]);
@@ -87,6 +87,14 @@ useEffect(() => {
   const [isUndoRedoAction, setIsUndoRedoAction] = useState(false); // Flag pour éviter d'ajouter les actions d'annulation/rétablissement elles-mêmes à l'historique
   const [displayedAngles, setDisplayedAngles] = useState([]);
   const [hasTooSmallAngles, setHasTooSmallAngles] = useState(false); // Nouvel état pour les angles trop petits
+  const [productionSequence, setProductionSequence] = useState(null); // Pour stocker les étapes de production
+  const [showProductionVisualizer, setShowProductionVisualizer] =
+    useState(false); // Pour ouvrir le visualiseur avec les étapes de prod
+
+  // Nouveaux états pour les outils de dessin de formes prédéfinies
+  const [drawingToolMode, setDrawingToolMode] = useState(null); // 'rectangle', 'square', 'circle', ou null
+  const [shapeCreationStartPoint, setShapeCreationStartPoint] = useState(null); // {x, y}
+  const [previewShape, setPreviewShape] = useState(null); // Object décrivant la forme en prévisualisation
 
   const svgCanvasRef = useRef(null);
   const vertexPressTimer = useRef(null); // Pour le délai du clic maintenu
@@ -443,8 +451,17 @@ useEffect(() => {
     (s) => s.type === "polygon" || s.type === "polyline"
   );
 
+  // Nouveau gestionnaire pour le clic (après mousedown + mouseup)
   const handleCanvasClick = (event) => {
     if (draggingVertexInfo) return;
+
+    // Si un outil de forme est actif, ne pas traiter les clics (géré par mousedown/mousemove/mouseup)
+    if (drawingToolMode) return;
+
+    const svgRect = svgCanvasRef.current?.getBoundingClientRect();
+    if (!svgRect) return;
+    const x = event.clientX - svgRect.left;
+    const y = event.clientY - svgRect.top;
 
     // Si on est en train de dessiner, on continue à ajouter des points
     if (currentPoints.length > 0) {
@@ -464,10 +481,6 @@ useEffect(() => {
 
     // Si pas de forme principale ou si on démarre le dessin
     if (!hasPrincipalShape) {
-      const svgRect = svgCanvasRef.current?.getBoundingClientRect();
-      if (!svgRect) return;
-      const x = event.clientX - svgRect.left;
-      const y = event.clientY - svgRect.top;
       // Ajouter à l'historique avant de modifier l'état
       if (!isUndoRedoAction && currentPoints.length === 0) {
         addToHistory({
@@ -487,6 +500,27 @@ useEffect(() => {
       // On garde la sélection pour continuer à pouvoir éditer
       return;
     }
+  };
+
+  const handleCanvasMouseDown = (event) => {
+    if (draggingVertexInfo) return;
+
+    const svgRect = svgCanvasRef.current?.getBoundingClientRect();
+    if (!svgRect) return;
+    const x = event.clientX - svgRect.left;
+    const y = event.clientY - svgRect.top;
+
+    // Le mouseDown est principalement utilisé pour le début du dessin de forme
+    if (drawingToolMode) {
+      // Si un outil de forme est actif (rectangle, carré, cercle)
+      if (!shapeCreationStartPoint) {
+        // Premier clic : définir le point de départ de la forme
+        setShapeCreationStartPoint({ x, y });
+        setPreviewShape({ type: drawingToolMode, x1: x, y1: y, x2: x, y2: y }); // Initialiser la prévisualisation
+      }
+      event.stopPropagation(); // Empêcher que le clic soit traité comme un clic normal
+    }
+    // Si ce n'est pas un outil de forme, le clic sera traité par handleCanvasClick
   };
 
   const deleteAllShapes = () => {
@@ -591,6 +625,67 @@ useEffect(() => {
       return;
     }
 
+    if (drawingToolMode && shapeCreationStartPoint) {
+      const svgRect = svgCanvasRef.current?.getBoundingClientRect();
+      if (!svgRect) return;
+      const mouseX = event.clientX - svgRect.left;
+      const mouseY = event.clientY - svgRect.top;
+
+      if (drawingToolMode === "rectangle") {
+        setPreviewShape({
+          type: "rectangle",
+          x: Math.min(shapeCreationStartPoint.x, mouseX),
+          y: Math.min(shapeCreationStartPoint.y, mouseY),
+          width: Math.abs(mouseX - shapeCreationStartPoint.x),
+          height: Math.abs(mouseY - shapeCreationStartPoint.y),
+          // Stocker les points originaux peut être utile aussi pour le carré/cercle plus tard
+          x1: shapeCreationStartPoint.x,
+          y1: shapeCreationStartPoint.y,
+          x2: mouseX,
+          y2: mouseY,
+        });
+      } else if (drawingToolMode === "square") {
+        const dx = mouseX - shapeCreationStartPoint.x;
+        const dy = mouseY - shapeCreationStartPoint.y;
+        const side = Math.max(Math.abs(dx), Math.abs(dy)); // Pour un carré inscrit dans le rect du drag
+        // Ou side = Math.min(Math.abs(dx), Math.abs(dy)) pour un carré qui ne dépasse pas;
+        // Ou d'autres logiques (ex: distance au centre)
+        // Pour l'instant, faisons un carré basé sur la plus grande dimension du geste
+        const actualX2 = shapeCreationStartPoint.x + (dx > 0 ? side : -side);
+        const actualY2 = shapeCreationStartPoint.y + (dy > 0 ? side : -side);
+
+        setPreviewShape({
+          type: "square",
+          x: Math.min(shapeCreationStartPoint.x, actualX2),
+          y: Math.min(shapeCreationStartPoint.y, actualY2),
+          width: side,
+          height: side,
+          x1: shapeCreationStartPoint.x,
+          y1: shapeCreationStartPoint.y,
+          x2: mouseX,
+          y2: mouseY, // Garder les points du curseur pour feedback
+        });
+      } else if (drawingToolMode === "circle") {
+        const radius = V.distance(shapeCreationStartPoint, {
+          x: mouseX,
+          y: mouseY,
+        });
+        setPreviewShape({
+          type: "circle",
+          cx: shapeCreationStartPoint.x,
+          cy: shapeCreationStartPoint.y,
+          r: radius,
+          x1: shapeCreationStartPoint.x,
+          y1: shapeCreationStartPoint.y,
+          x2: mouseX,
+          y2: mouseY,
+        });
+      }
+      // Pas de snappedPreviewPoint si on dessine une forme
+      setSnappedPreviewPoint(null);
+      return; // Empêcher la logique de snappedPreviewPoint pour polylignes
+    }
+
     if (currentPoints.length > 0) {
       const svgRect = svgCanvasRef.current?.getBoundingClientRect();
       if (!svgRect) {
@@ -635,6 +730,49 @@ useEffect(() => {
       setDraggingVertexInfo(null); // Termine le drag
     }
     vertexMouseDownInfo.current = null; // Nettoyer dans tous les cas
+
+    if (drawingToolMode && shapeCreationStartPoint && previewShape) {
+      let pointsToConvert = [];
+      if (previewShape.type === "rectangle" || previewShape.type === "square") {
+        pointsToConvert = [
+          { x: previewShape.x, y: previewShape.y },
+          { x: previewShape.x + previewShape.width, y: previewShape.y },
+          {
+            x: previewShape.x + previewShape.width,
+            y: previewShape.y + previewShape.height,
+          },
+          { x: previewShape.x, y: previewShape.y + previewShape.height },
+        ];
+      } else if (previewShape.type === "circle") {
+        const numSegments = 24; // Discrétisation du cercle
+        for (let i = 0; i < numSegments; i++) {
+          const angle = (i / numSegments) * 2 * Math.PI;
+          pointsToConvert.push({
+            x: previewShape.cx + previewShape.r * Math.cos(angle),
+            y: previewShape.cy + previewShape.r * Math.sin(angle),
+          });
+        }
+      }
+
+      if (
+        pointsToConvert.length > 0 &&
+        ((previewShape.type === "rectangle" &&
+          (previewShape.width > 0 || previewShape.height > 0)) ||
+          (previewShape.type === "square" && previewShape.width > 0) ||
+          (previewShape.type === "circle" && previewShape.r > 0))
+      ) {
+        // Utiliser la fonction addPredefinedShape existante ou une version adaptée
+        // addPredefinedShape remplace les formes existantes, ce qui est le comportement souhaité ici
+        addPredefinedShape(pointsToConvert); // La fonction addPredefinedShape gère déjà l'historique
+      }
+
+      // Réinitialiser les états de dessin de forme
+      setShapeCreationStartPoint(null);
+      setPreviewShape(null);
+      // Optionnel : désactiver l'outil après usage, ou le laisser actif.
+      // Pour l'instant, laissons le actif.
+      // setDrawingToolMode(null);
+    }
   };
 
   const handleApplyRounding = () => {
@@ -861,9 +999,36 @@ useEffect(() => {
           result
         );
         alert(
-          `Opération réussie: ${result.message}\nFichier original: ${result.originalFilename}\nSéquence: ${result.sequenceFile}`
+          `Opération réussie: ${result.message}
+Fichier original: ${result.originalFilename}
+Séquence: ${result.sequenceFile}`
         );
         setIsInProduction(true); // Mettre à jour l'état de production
+
+        // Supposons que result.sequenceData contient les étapes pour le visualiseur
+        // Vous devrez ajuster "result.sequenceData" à la clé réelle de votre API
+        // MISE À JOUR : Selon la documentation, la clé est "actions"
+        if (result.actions && Array.isArray(result.actions)) {
+          setProductionSequence(result.actions); // Utiliser result.actions
+          setShowProductionVisualizer(true); // Ouvrir le visualiseur avec les nouvelles étapes
+        } else if (result.sequenceFile) {
+          // Si result.actions n'est pas là, mais sequenceFile l'est,
+          // cela pourrait indiquer un problème ou une réponse API inattendue.
+          // Pour l'instant, affichons un avertissement.
+          console.warn(
+            "result.actions non trouvé ou n'est pas un tableau. Les étapes de production ne peuvent pas être visualisées directement. Fichier de séquence disponible:",
+            result.sequenceFile
+          );
+          setProductionSequence(null); // Assurer qu'on n'utilise pas d'anciennes données
+          setShowProductionVisualizer(false); // Ne pas tenter d'ouvrir le visualiseur
+        } else {
+          // Ni sequenceData ni sequenceFile, ou format incorrect
+          console.warn(
+            "Aucune donnée de séquence valide reçue de l'API pour la visualisation."
+          );
+          setProductionSequence(null);
+          setShowProductionVisualizer(false);
+        }
       } else {
         console.error(
           "Erreur de l'API lors du traitement direct du SVG:",
@@ -874,7 +1039,9 @@ useEffect(() => {
             result.message || "Erreur inconnue du serveur"
           }`
         );
-        // Laisser isInProduction à false ou le remettre à false si nécessaire
+        setProductionSequence(null); // Effacer les anciennes séquences en cas d'erreur
+        setShowProductionVisualizer(false);
+        // Laisser isInProduction à false ou le remettre à false si nécessaire (déjà géré plus bas pour API stop)
       }
     } catch (error) {
       console.error(
@@ -882,7 +1049,9 @@ useEffect(() => {
         error
       );
       alert(`Erreur de connexion au serveur: ${error.message}`);
-      // Laisser isInProduction à false ou le remettre à false si nécessaire
+      setProductionSequence(null); // Effacer les anciennes séquences en cas d'erreur
+      setShowProductionVisualizer(false);
+      // Laisser isInProduction à false ou le remettre à false si nécessaire (déjà géré plus bas pour API stop)
     }
   };
 
@@ -930,6 +1099,18 @@ useEffect(() => {
       );
       // Idem, on remet à false pour débloquer l'UI
       setIsInProduction(false);
+    }
+  };
+
+  const handleOpenVisualizer = () => {
+    // Priorité aux données de production si elles existent et ne sont pas vides
+    if (productionSequence && productionSequence.length > 0) {
+      setShowProductionVisualizer(true); // Ouvre le visualiseur avec les données de production
+      setIsPopupOpen(false); // S'assure que l'autre condition de rendu pour le visualiseur est fausse
+    } else {
+      // Sinon, utilise les étapes par défaut (etape-test.json)
+      setIsPopupOpen((prev) => !prev); // Bascule l'état pour le visualiseur par défaut
+      setShowProductionVisualizer(false); // S'assure que la condition pour le visualiseur de prod est fausse
     }
   };
 
@@ -1042,6 +1223,103 @@ useEffect(() => {
     });
   };
 
+  // --- Fonctions pour ajouter des formes prédéfinies ---
+  const addPredefinedShape = (newPoints, shapeType = "polygon") => {
+    if (!isUndoRedoAction) {
+      addToHistory({
+        type: "shapes",
+        shapes: JSON.parse(JSON.stringify(shapes)),
+      });
+    }
+
+    const newShape = {
+      id: `shape${shapes.length + 1 + Date.now()}`, // Ajout de Date.now() pour unicité si suppression/ajout rapide
+      type: shapeType,
+      points: newPoints,
+      fill: "rgba(0, 200, 100, 0.3)",
+      stroke: "black",
+      strokeWidth: 2,
+    };
+
+    // Conserver les formes qui ne sont ni des polygones ni des polylignes (ex: les "rect" d'exemple)
+    const otherShapes = shapes.filter(
+      (s) => s.type !== "polygon" && s.type !== "polyline"
+    );
+
+    setShapes([...otherShapes, newShape]);
+    setSelectedShapeId(newShape.id);
+    resetDrawingState(); // Efface currentPoints etc.
+    setSelectedPointIndex(null);
+  };
+
+  const handleAddPredefinedRectangle = () => {
+    const svgRect = svgCanvasRef.current?.getBoundingClientRect();
+    const centerX = (svgRect?.width || 600) / 2;
+    const centerY = (svgRect?.height || 400) / 2;
+    const rectWidth = 150;
+    const rectHeight = 100;
+
+    const points = [
+      { x: centerX - rectWidth / 2, y: centerY - rectHeight / 2 },
+      { x: centerX + rectWidth / 2, y: centerY - rectHeight / 2 },
+      { x: centerX + rectWidth / 2, y: centerY + rectHeight / 2 },
+      { x: centerX - rectWidth / 2, y: centerY + rectHeight / 2 },
+    ];
+    addPredefinedShape(points);
+  };
+
+  const handleAddPredefinedSquare = () => {
+    const svgRect = svgCanvasRef.current?.getBoundingClientRect();
+    const centerX = (svgRect?.width || 600) / 2;
+    const centerY = (svgRect?.height || 400) / 2;
+    const sideLength = 120;
+
+    const points = [
+      { x: centerX - sideLength / 2, y: centerY - sideLength / 2 },
+      { x: centerX + sideLength / 2, y: centerY - sideLength / 2 },
+      { x: centerX + sideLength / 2, y: centerY + sideLength / 2 },
+      { x: centerX - sideLength / 2, y: centerY + sideLength / 2 },
+    ];
+    addPredefinedShape(points);
+  };
+
+  const handleAddPredefinedCircle = (numSegments = 24) => {
+    const svgRect = svgCanvasRef.current?.getBoundingClientRect();
+    const centerX = (svgRect?.width || 600) / 2;
+    const centerY = (svgRect?.height || 400) / 2;
+    const radius = 75;
+    const points = [];
+    for (let i = 0; i < numSegments; i++) {
+      const angle = (i / numSegments) * 2 * Math.PI;
+      points.push({
+        x: centerX + radius * Math.cos(angle),
+        y: centerY + radius * Math.sin(angle),
+      });
+    }
+    addPredefinedShape(points);
+  };
+  // --- Fin des fonctions pour formes prédéfinies ---
+
+  // --- Fonctions pour activer les outils de dessin de formes ---
+  const activateShapeTool = (toolName) => {
+    setDrawingToolMode((prevTool) => (prevTool === toolName ? null : toolName)); // Bascule l'outil, ou désactive si reclic
+    setCurrentPoints([]); // Arrêter le dessin de polyligne en cours
+    setSelectedShapeId(null); // Désélectionner toute forme
+    setShapeCreationStartPoint(null);
+    setPreviewShape(null);
+  };
+  // --- Fin des fonctions pour activer les outils ---
+
+  // Mode de dessin par points (polyligne)
+  const activatePointsMode = () => {
+    // Désactiver tous les autres outils de dessin
+    setDrawingToolMode(null);
+    setShapeCreationStartPoint(null);
+    setPreviewShape(null);
+    setSelectedShapeId(null);
+    // On ne vide pas currentPoints car on pourrait vouloir continuer un dessin en cours
+  };
+
   return (
     <div className="flex flex-col items-center justify-start h-screen bg-gradient-to-b from-blue-50 to-indigo-100 text-slate-700 p-4 font-sans">
       <header className="w-full max-w-5xl mb-3 text-center">
@@ -1088,7 +1366,7 @@ useEffect(() => {
           <SvgCanvas
             shapes={shapes}
             currentPoints={currentPoints}
-            onCanvasClick={handleCanvasClick}
+            onCanvasMouseDown={handleCanvasMouseDown}
             selectedShapeId={selectedShapeId}
             onShapeClick={handleShapeClick}
             selectedPointIndex={selectedPointIndex}
@@ -1099,6 +1377,8 @@ useEffect(() => {
             isDrawing={currentPoints.length > 0 && !draggingVertexInfo}
             onSegmentRightClick={handleSegmentRightClick}
             displayedAngles={displayedAngles}
+            previewShape={previewShape}
+            onCanvasClick={handleCanvasClick}
           />
         </div>
 
@@ -1111,22 +1391,134 @@ useEffect(() => {
               <h2 className="text-lg font-semibold text-indigo-600 mb-2">
                 Actions Pièce
               </h2>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2 mb-2">
+                <button
+                  onClick={resetPrincipalShape}
+                  disabled={!hasPrincipalShape && currentPoints.length === 0}
+                  className="px-3 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 disabled:bg-gray-200 disabled:text-gray-400 transition-colors duration-150 shadow-sm flex items-center gap-1"
+                  title="Réinitialiser"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-5 w-5"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                  <span>Réinitialiser</span>
+                </button>
                 {(hasPrincipalShape || currentPoints.length > 0) && (
                   <button
                     onClick={finalizeShape}
                     disabled={currentPoints.length < 2}
-                    className="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 disabled:bg-gray-200 disabled:text-gray-400 transition-colors duration-150 shadow-sm"
+                    className="px-3 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 disabled:bg-gray-200 disabled:text-gray-400 transition-colors duration-150 shadow-sm flex items-center gap-1"
+                    title="Terminer la forme"
                   >
-                    Terminer Forme
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="h-5 w-5"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                    <span>Terminer</span>
                   </button>
                 )}
+              </div>
+              <div className="flex flex-wrap gap-2">
                 <button
-                  onClick={resetPrincipalShape}
-                  disabled={!hasPrincipalShape && currentPoints.length === 0}
-                  className="px-4 py-2 bg-indigo-500 text-white rounded-md hover:bg-indigo-600 disabled:bg-gray-200 disabled:text-gray-400 transition-colors duration-150 shadow-sm"
+                  onClick={activatePointsMode}
+                  title="Mode Points (dessiner librement)"
+                  className={`px-3 py-2 text-white rounded-md hover:bg-blue-600 transition-colors duration-150 shadow-sm flex items-center gap-1 ${
+                    !drawingToolMode
+                      ? "bg-blue-700 ring-2 ring-blue-300"
+                      : "bg-blue-500"
+                  }`}
                 >
-                  {hasPrincipalShape ? "Nouvelle Pièce" : "Réinitialiser"}
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-5 w-5"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                  >
+                    <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+                  </svg>
+                  <span>Points</span>
+                </button>
+                <button
+                  onClick={() => activateShapeTool("rectangle")}
+                  title="Dessiner Rectangle"
+                  className={`px-3 py-2 text-white rounded-md hover:bg-blue-600 transition-colors duration-150 shadow-sm flex items-center gap-1 ${
+                    drawingToolMode === "rectangle"
+                      ? "bg-blue-700 ring-2 ring-blue-300"
+                      : "bg-blue-500"
+                  }`}
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-5 w-5"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M5 4a3 3 0 00-3 3v10a3 3 0 003 3h10a3 3 0 003-3V7a3 3 0 00-3-3H5zm0 2a1 1 0 00-1 1v10a1 1 0 001 1h10a1 1 0 001-1V7a1 1 0 00-1-1H5z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                  <span>Rectangle</span>
+                </button>
+                <button
+                  onClick={() => activateShapeTool("square")}
+                  title="Dessiner Carré"
+                  className={`px-3 py-2 text-white rounded-md hover:bg-blue-600 transition-colors duration-150 shadow-sm flex items-center gap-1 ${
+                    drawingToolMode === "square"
+                      ? "bg-blue-700 ring-2 ring-blue-300"
+                      : "bg-blue-500"
+                  }`}
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-5 w-5"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                  >
+                    <path d="M5 3a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2V5a2 2 0 00-2-2H5z" />
+                  </svg>
+                  <span>Carré</span>
+                </button>
+                <button
+                  onClick={() => activateShapeTool("circle")}
+                  title="Dessiner Cercle"
+                  className={`px-3 py-2 text-white rounded-md hover:bg-blue-600 transition-colors duration-150 shadow-sm flex items-center gap-1 ${
+                    drawingToolMode === "circle"
+                      ? "bg-blue-700 ring-2 ring-blue-300"
+                      : "bg-blue-500"
+                  }`}
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-5 w-5"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M10 18a8 8 0 100-16 8 8 0 000 16zm0-2a6 6 0 100-12 6 6 0 000 12z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                  <span>Cercle</span>
                 </button>
               </div>
             </div>
@@ -1189,12 +1581,12 @@ useEffect(() => {
 
             {/* Bouton Exporter SVG poussé en bas */}
             <div className="mt-auto p-3 bg-blue-50 rounded-md border border-blue-100 flex flex-col gap-2">
-            <button
-  onClick={() => setIsPopupOpen((prev) => !prev)}
-  className="px-4 py-2 bg-purple-500 text-white rounded-md hover:bg-purple-600 transition-colors duration-150 shadow-sm"
->
-  Visualiser la création
-</button>
+              <button
+                onClick={handleOpenVisualizer}
+                className="px-4 py-2 bg-purple-500 text-white rounded-md hover:bg-purple-600 transition-colors duration-150 shadow-sm"
+              >
+                Visualiser la création
+              </button>
               <button
                 onClick={exportToSvg}
                 disabled={
@@ -1210,8 +1602,7 @@ useEffect(() => {
               </button>
               <button
                 onClick={handleStopProduction}
-                disabled={!isInProduction} // Activé seulement si en production
-                className="w-full px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 disabled:bg-gray-400 disabled:text-gray-500 disabled:cursor-not-allowed transition-colors duration-150 shadow-sm"
+                className="w-full px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors duration-150 shadow-sm"
               >
                 STOP
               </button>
@@ -1219,23 +1610,32 @@ useEffect(() => {
           </div>
         </div>
         <>
-  {isPopupOpen && (
-    <PieceCreationVisualizer
-      etapes={etapes}
-      onClose={() => setIsPopupOpen(false)}
-    />
-  )}
+          {isPopupOpen && !showProductionVisualizer && (
+            <PieceCreationVisualizer
+              etapes={etapes}
+              onClose={() => setIsPopupOpen(false)}
+            />
+          )}
 
-  {isLoading && (
-    <p className="text-center mt-4 text-blue-600">
-      Chargement des étapes...
-    </p>
-  )}
+          {showProductionVisualizer && productionSequence && (
+            <PieceCreationVisualizer
+              etapes={productionSequence}
+              onClose={() => {
+                setShowProductionVisualizer(false);
+              }}
+            />
+          )}
 
-  {error && (
-    <p className="text-center mt-4 text-red-600">Erreur : {error}</p>
-  )}
-</>
+          {isLoading && (
+            <p className="text-center mt-4 text-blue-600">
+              Chargement des étapes...
+            </p>
+          )}
+
+          {error && (
+            <p className="text-center mt-4 text-red-600">Erreur : {error}</p>
+          )}
+        </>
       </div>
 
       <footer className="w-full max-w-5xl mt-3 mb-2 text-center">

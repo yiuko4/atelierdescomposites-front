@@ -19,6 +19,7 @@ const V_canvas = {
 function SvgCanvas({
   shapes,
   currentPoints,
+  onCanvasMouseDown,
   onCanvasClick,
   selectedShapeId,
   onShapeClick,
@@ -30,6 +31,7 @@ function SvgCanvas({
   isDrawing,
   onSegmentRightClick,
   displayedAngles,
+  previewShape,
 }) {
   const currentPathPoints = currentPoints.map((p) => `${p.x},${p.y}`).join(" ");
   const svgRef = useRef(null);
@@ -63,11 +65,21 @@ function SvgCanvas({
     .map((p) => `${p.x},${p.y}`)
     .join(" ");
 
+  // Style pour la prévisualisation des formes (rectangle, cercle, etc.)
+  const previewElementStyle = {
+    fill: "none",
+    stroke: "dodgerblue",
+    strokeWidth: 1.5,
+    strokeDasharray: "4,4",
+    pointerEvents: "none", // Important pour ne pas interférer avec les autres événements souris
+  };
+
   return (
     <div className="w-full h-full">
       <svg
         width="100%"
         height="100%"
+        onMouseDown={onCanvasMouseDown}
         onClick={onCanvasClick}
         style={{ ...svgStyle, display: "block" }}
         ref={svgRef}
@@ -355,6 +367,34 @@ function SvgCanvas({
               {angle.value}°
             </text>
           ))}
+
+        {/* Prévisualisation de la forme en cours de dessin (rectangle, cercle...) */}
+        {previewShape && previewShape.type === "rectangle" && (
+          <rect
+            x={previewShape.x}
+            y={previewShape.y}
+            width={previewShape.width}
+            height={previewShape.height}
+            {...previewElementStyle}
+          />
+        )}
+        {previewShape && previewShape.type === "square" && (
+          <rect // Un carré est aussi un rect
+            x={previewShape.x}
+            y={previewShape.y}
+            width={previewShape.width}
+            height={previewShape.height}
+            {...previewElementStyle}
+          />
+        )}
+        {previewShape && previewShape.type === "circle" && (
+          <circle
+            cx={previewShape.cx}
+            cy={previewShape.cy}
+            r={previewShape.r}
+            {...previewElementStyle}
+          />
+        )}
       </svg>
     </div>
   );
