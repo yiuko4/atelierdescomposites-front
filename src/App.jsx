@@ -48,7 +48,7 @@ function App() {
   const [currentPoints, setCurrentPoints] = useState([]);
   const [selectedShapeId, setSelectedShapeId] = useState(null);
   const [selectedPointIndex, setSelectedPointIndex] = useState(null);
-  const [roundingRadius, setRoundingRadius] = useState(20);
+  const [roundingRadius, setRoundingRadius] = useState(5);
   const [svgUnitsPerMm, setSvgUnitsPerMm] = useState(6);
   const [draggingVertexInfo, setDraggingVertexInfo] = useState(null);
   const [isOrthogonalMode, setIsOrthogonalMode] = useState(false);
@@ -93,51 +93,6 @@ function App() {
     let processedPoints = [...currentPoints];
     const initialNumPoints = currentPoints.length;
     const isInitiallyPolygon = initialNumPoints >= 3;
-
-    if (initialNumPoints >= 2) {
-      let longestSegmentLength = -1;
-      let longestSegmentIndex = -1;
-
-      const segmentsToIterate = isInitiallyPolygon
-        ? initialNumPoints
-        : initialNumPoints - 1;
-
-      if (segmentsToIterate > 0) {
-        for (let i = 0; i < segmentsToIterate; i++) {
-          const p1 = processedPoints[i];
-          const p2 = processedPoints[(i + 1) % initialNumPoints];
-          const dist = V.distance(p1, p2);
-          if (dist > longestSegmentLength) {
-            longestSegmentLength = dist;
-            longestSegmentIndex = i;
-          }
-        }
-      }
-
-      if (longestSegmentIndex !== -1) {
-        const pA_longest = processedPoints[longestSegmentIndex];
-        const pB_longest =
-          processedPoints[(longestSegmentIndex + 1) % initialNumPoints];
-        const M = V.add(
-          pA_longest,
-          V.scale(V.subtract(pB_longest, pA_longest), 0.5)
-        );
-
-        const points_after_M_segment = processedPoints.slice(
-          longestSegmentIndex + 1
-        );
-        const points_before_M_segment_inclusive = processedPoints.slice(
-          0,
-          longestSegmentIndex + 1
-        );
-
-        processedPoints = [
-          M,
-          ...points_after_M_segment,
-          ...points_before_M_segment_inclusive,
-        ];
-      }
-    }
 
     const newShape = {
       id: `shape${shapes.length + 1}`,
@@ -262,6 +217,56 @@ function App() {
           event.preventDefault();
         }
       }
+
+      // Logique pour supprimer un sommet sélectionné
+      // Vérifier si l'on est dans un élément de saisie (input, textarea, etc.)
+      const targetTagName = event.target.tagName.toLowerCase();
+      const isEditingInput =
+        targetTagName === "input" ||
+        targetTagName === "textarea" ||
+        event.target.isContentEditable;
+
+      if (
+        !isEditingInput && // Ne pas supprimer de sommet si on est en train d'éditer un champ
+        (event.key === "Backspace" || event.key === "Delete") &&
+        selectedShapeId &&
+        selectedPointIndex !== null
+      ) {
+        event.preventDefault();
+
+        if (!isUndoRedoAction) {
+          addToHistory({
+            type: "shapes",
+            shapes: JSON.parse(JSON.stringify(shapes)),
+          });
+        }
+
+        setShapes((prevShapes) => {
+          const newShapes = prevShapes.map((shape) => {
+            if (shape.id === selectedShapeId) {
+              const newPoints = [...shape.points];
+              newPoints.splice(selectedPointIndex, 1);
+
+              // Si la forme a trop peu de points, la supprimer
+              if (
+                (shape.type === "polyline" && newPoints.length < 2) ||
+                (shape.type === "polygon" && newPoints.length < 3)
+              ) {
+                return null; // Marquer pour suppression
+              }
+              return { ...shape, points: newPoints };
+            }
+            return shape;
+          });
+          return newShapes.filter((shape) => shape !== null); // Filtrer les formes marquées pour suppression
+        });
+
+        // Désélectionner le point et potentiellement la forme si elle a été supprimée
+        setSelectedPointIndex(null);
+        if (!shapes.find((s) => s && s.id === selectedShapeId)) {
+          setSelectedShapeId(null);
+        }
+      }
     };
 
     document.addEventListener("keydown", handleKeyDown);
@@ -275,6 +280,10 @@ function App() {
     finalizeShape,
     handleUndo,
     handleRedo,
+    selectedPointIndex,
+    shapes,
+    addToHistory,
+    isUndoRedoAction,
   ]); // finalizeShape est dans les deps
 
   useEffect(() => {
@@ -642,7 +651,7 @@ function App() {
     setSelectedPointIndex(null);
   };
 
-  const exportToSvg = () => {
+  const exportToSvg = async () => {
     const svgWidth =
       document.querySelector(".bg-white.shadow-lg svg")?.clientWidth || 600;
     const svgHeight =
@@ -676,15 +685,50 @@ function App() {
 
     svgString += `</svg>`;
 
-    const blob = new Blob([svgString], { type: "image/svg+xml" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "mon_dessin.svg";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "";
+    const apiUrlPath = `${apiBaseUrl}/api/direct/svg-to-sequence`;
+
+    const svgBlob = new Blob([svgString], { type: "image/svg+xml" });
+    const formData = new FormData();
+    formData.append("svgfile", svgBlob, "atelier_export.svg"); // 'svgfile' est le nom du champ attendu par l'API
+    formData.append("sendToApi", "true"); // Envoyer comme chaîne, le backend devrait le convertir en booléen
+    formData.append("closePolygons", "true"); // Valeur par défaut, peut être rendue configurable
+
+    try {
+      const response = await fetch(apiUrlPath, {
+        method: "POST",
+        // NE PAS définir Content-Type ici, le navigateur le fera pour multipart/form-data
+        body: formData,
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        console.log(
+          "SVG envoyé et traité avec succès par l'API (direct):",
+          result
+        );
+        alert(
+          `Opération réussie: ${result.message}\nFichier original: ${result.originalFilename}\nSéquence: ${result.sequenceFile}`
+        );
+      } else {
+        console.error(
+          "Erreur de l'API lors du traitement direct du SVG:",
+          result
+        );
+        alert(
+          `Erreur ${response.status} de l\'API: ${
+            result.message || "Erreur inconnue du serveur"
+          }`
+        );
+      }
+    } catch (error) {
+      console.error(
+        "Erreur de connexion ou lors de l'envoi direct du SVG:",
+        error
+      );
+      alert(`Erreur de connexion au serveur: ${error.message}`);
+    }
   };
 
   const calculatePathLength = (points, isPolygon) => {
@@ -797,169 +841,174 @@ function App() {
   };
 
   return (
-    <div
-      className="flex flex-col items-center justify-start min-h-screen bg-gradient-to-b from-blue-50 to-indigo-100 text-slate-700 p-4 font-sans"
-      onMouseMove={handleSvgMouseMove}
-      onMouseUp={handleSvgMouseUp}
-      onMouseLeave={handleSvgMouseUp}
-    >
-      <header className="w-full max-w-5xl mb-6 text-center">
+    <div className="flex flex-col items-center justify-start h-screen bg-gradient-to-b from-blue-50 to-indigo-100 text-slate-700 p-4 font-sans">
+      <header className="w-full max-w-5xl mb-3 text-center">
         <h1 className="text-4xl font-bold mb-2 text-indigo-600 tracking-wider">
           Atelier des composites
         </h1>
       </header>
 
-      {/* Section d'informations et contrôles principaux */}
-      <div className="w-full max-w-5xl mb-4 p-4 border border-indigo-200 bg-white rounded-lg shadow-md">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-          {/* Informations */}
-          <div className="md:col-span-1 p-3 bg-blue-50 rounded-md border border-blue-100">
-            <h2 className="text-lg font-semibold text-indigo-600 mb-2">
-              Informations
-            </h2>
-            <p className="text-sm text-slate-600">
-              Échelle :{" "}
-              <span className="font-bold text-indigo-600">{svgUnitsPerMm}</span>{" "}
-              unités SVG / mm
-            </p>
-            <p className="text-sm text-slate-600">
-              Segments Totaux :{" "}
-              <span className="font-bold text-indigo-600">{totalSegments}</span>
-            </p>
-            {selectedShape &&
-              (selectedShape.type === "polygon" ||
-                selectedShape.type === "polyline") && (
-                <p className="text-sm text-slate-600 mt-1">
-                  Longueur sélectionnée :{" "}
-                  <span className="font-bold text-indigo-600">
-                    {calculatePathLength(
-                      selectedShape.points,
-                      selectedShape.type === "polygon"
-                    )}{" "}
-                    mm
-                  </span>
-                </p>
-              )}
-            <p className="text-xs text-slate-500 mt-3 pt-2 border-t border-blue-100">
-              <span className="inline-block px-1 py-0.5 bg-indigo-100 rounded mr-1">
-                Ctrl+Z
-              </span>{" "}
-              Annuler &nbsp;
-              <span className="inline-block px-1 py-0.5 bg-indigo-100 rounded mr-1">
-                Ctrl+Y
-              </span>{" "}
-              Rétablir
-            </p>
-          </div>
+      {/* Conteneur principal pour le canvas et les panneaux latéraux */}
+      <div
+        className="w-full max-w-7xl flex flex-col md:flex-row gap-4 flex-1"
+        style={{ height: "calc(100vh - 150px)" }}
+      >
+        {/* Colonne de gauche : Historique des pièces */}
+        <div className="md:w-[20%] w-full" style={{ height: "100%" }}>
+          <div className="p-4 border border-indigo-200 bg-white rounded-lg shadow-md flex flex-col h-full gap-4">
+            {/* En-tête du panneau */}
+            <div className="p-3 bg-blue-50 rounded-md border border-blue-100">
+              <h2 className="text-lg font-semibold text-indigo-600 mb-2">
+                Historique
+              </h2>
+              <p className="text-sm text-slate-600">Pièces enregistrées</p>
+            </div>
 
-          {/* Actions sur la forme en cours / pièce */}
-          <div className="md:col-span-2 p-3 bg-blue-50 rounded-md border border-blue-100 flex flex-col space-y-2">
-            <h2 className="text-lg font-semibold text-indigo-600 mb-2">
-              Actions Pièce
-            </h2>
-            <div className="flex flex-wrap gap-2">
-              {(hasPrincipalShape || currentPoints.length > 0) && (
-                <button
-                  onClick={finalizeShape}
-                  disabled={currentPoints.length < 2}
-                  className="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 disabled:bg-gray-200 disabled:text-gray-400 transition-colors duration-150 shadow-sm"
-                >
-                  Terminer Forme
-                </button>
-              )}
-              <button
-                onClick={resetPrincipalShape}
-                disabled={!hasPrincipalShape && currentPoints.length === 0}
-                className="px-4 py-2 bg-indigo-500 text-white rounded-md hover:bg-indigo-600 disabled:bg-gray-200 disabled:text-gray-400 transition-colors duration-150 shadow-sm"
-              >
-                {hasPrincipalShape ? "Nouvelle Pièce" : "Réinitialiser"}
-              </button>
+            {/* Contenu à remplir plus tard */}
+            <div className="flex-grow bg-gray-50 rounded-md p-2 border border-gray-100">
+              {/* Emplacement futur pour l'historique des pièces SVG */}
+              <p className="text-sm text-gray-400 italic text-center mt-4">
+                L'historique des pièces sera affiché ici
+              </p>
             </div>
           </div>
         </div>
 
-        {/* Outils et options */}
-        <div className="p-3 bg-blue-50 rounded-md mt-2 border border-blue-100">
-          <h2 className="text-lg font-semibold text-indigo-600 mb-3">
-            Outils & Options
-          </h2>
-          <div className="flex flex-wrap gap-2 items-center">
-            <button
-              onClick={exportToSvg}
-              disabled={shapes.length === 0}
-              className="px-4 py-2 bg-teal-500 text-white rounded-md hover:bg-teal-600 disabled:bg-gray-200 disabled:text-gray-400 transition-colors duration-150 shadow-sm"
-            >
-              Exporter SVG
-            </button>
-            <button
-              onClick={() => setIsOrthogonalMode(!isOrthogonalMode)}
-              className={`px-4 py-2 rounded-md transition-colors duration-150 shadow-sm ${
-                isOrthogonalMode
-                  ? "bg-indigo-500 text-white"
-                  : "bg-blue-100 text-indigo-600 hover:bg-blue-200"
-              }`}
-              title={
-                isOrthogonalMode
-                  ? "Désactiver Mode Ortho"
-                  : "Activer Mode Ortho"
-              }
-            >
-              Mode Ortho: {isOrthogonalMode ? "ON" : "OFF"}
-            </button>
-            {/* Contrôle de l'arrondi */}
-            {selectedShapeId && selectedPointIndex !== null && canRound && (
-              <div className="flex items-center space-x-2 p-2 bg-blue-100 rounded-md border border-blue-200">
-                <label
-                  htmlFor="roundingRadius"
-                  className="text-sm text-slate-600"
-                >
-                  Rayon Arrondi:
-                </label>
-                <input
-                  type="number"
-                  id="roundingRadius"
-                  value={roundingRadius}
-                  onChange={(e) =>
-                    setRoundingRadius(Math.max(0, parseInt(e.target.value, 10)))
-                  }
-                  className="w-20 p-1 rounded bg-white text-slate-700 border border-blue-300 focus:ring-indigo-500 focus:border-indigo-500"
-                />
+        {/* Colonne centrale : Canevas SVG */}
+        <div
+          className="md:w-[60%] w-full bg-white shadow-md cursor-crosshair rounded-lg border border-indigo-200 overflow-hidden"
+          style={{ height: "100%" }}
+          ref={svgCanvasRef}
+          onMouseMove={handleSvgMouseMove}
+          onMouseUp={handleSvgMouseUp}
+          onMouseLeave={handleSvgMouseUp}
+        >
+          <SvgCanvas
+            shapes={shapes}
+            currentPoints={currentPoints}
+            onCanvasClick={handleCanvasClick}
+            selectedShapeId={selectedShapeId}
+            onShapeClick={handleShapeClick}
+            selectedPointIndex={selectedPointIndex}
+            onVertexMouseDown={handleVertexMouseDown}
+            svgUnitsPerMm={svgUnitsPerMm}
+            isDraggingVertex={!!draggingVertexInfo}
+            snappedPreviewPoint={snappedPreviewPoint}
+            isDrawing={currentPoints.length > 0 && !draggingVertexInfo}
+            onSegmentRightClick={handleSegmentRightClick}
+          />
+        </div>
+
+        {/* Colonne de droite : Panneau de contrôle unique */}
+        <div className="md:w-[20%] w-full" style={{ height: "100%" }}>
+          {/* Panneau de contrôle unique regroupant tout */}
+          <div className="p-4 border border-indigo-200 bg-white rounded-lg shadow-md flex flex-col h-full gap-4">
+            {/* Section Actions Pièce */}
+            <div className="p-3 bg-blue-50 rounded-md border border-blue-100">
+              <h2 className="text-lg font-semibold text-indigo-600 mb-2">
+                Actions Pièce
+              </h2>
+              <div className="flex flex-wrap gap-2">
+                {(hasPrincipalShape || currentPoints.length > 0) && (
+                  <button
+                    onClick={finalizeShape}
+                    disabled={currentPoints.length < 2}
+                    className="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 disabled:bg-gray-200 disabled:text-gray-400 transition-colors duration-150 shadow-sm"
+                  >
+                    Terminer Forme
+                  </button>
+                )}
                 <button
-                  onClick={handleApplyRounding}
-                  disabled={!canRound}
-                  className="px-3 py-1 bg-indigo-500 text-white rounded-md hover:bg-indigo-600 disabled:bg-gray-300 transition-colors duration-150 shadow-sm"
+                  onClick={resetPrincipalShape}
+                  disabled={!hasPrincipalShape && currentPoints.length === 0}
+                  className="px-4 py-2 bg-indigo-500 text-white rounded-md hover:bg-indigo-600 disabled:bg-gray-200 disabled:text-gray-400 transition-colors duration-150 shadow-sm"
                 >
-                  Arrondir Point
+                  {hasPrincipalShape ? "Nouvelle Pièce" : "Réinitialiser"}
                 </button>
               </div>
-            )}
+            </div>
+
+            {/* Section Outils et Options (sans export) */}
+            <div className="p-3 bg-blue-50 rounded-md border border-blue-100">
+              <h2 className="text-lg font-semibold text-indigo-600 mb-3">
+                Outils & Options
+              </h2>
+              <div className="flex flex-wrap gap-2 items-center">
+                <button
+                  onClick={() => setIsOrthogonalMode(!isOrthogonalMode)}
+                  className={`px-4 py-2 rounded-md transition-colors duration-150 shadow-sm ${
+                    isOrthogonalMode
+                      ? "bg-indigo-500 text-white"
+                      : "bg-blue-100 text-indigo-600 hover:bg-blue-200"
+                  }`}
+                  title={
+                    isOrthogonalMode
+                      ? "Désactiver Mode Ortho"
+                      : "Activer Mode Ortho"
+                  }
+                >
+                  Mode Ortho: {isOrthogonalMode ? "ON" : "OFF"}
+                </button>
+                {/* Contrôle de l'arrondi - redesign */}
+                {selectedShapeId && selectedPointIndex !== null && canRound && (
+                  <div className="bg-blue-100 rounded-md border border-blue-200 p-3">
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-center justify-between">
+                        <label
+                          htmlFor="roundingRadius"
+                          className="text-sm font-medium text-indigo-700"
+                        >
+                          Rayon Arrondi:
+                        </label>
+                        <input
+                          type="number"
+                          id="roundingRadius"
+                          value={roundingRadius}
+                          onChange={(e) =>
+                            setRoundingRadius(
+                              Math.max(0, parseInt(e.target.value, 10))
+                            )
+                          }
+                          className="w-24 p-2 rounded bg-white text-slate-700 border border-blue-300 focus:ring-indigo-500 focus:border-indigo-500 text-right"
+                        />
+                      </div>
+                      <button
+                        onClick={handleApplyRounding}
+                        className="w-full py-2 mt-1 bg-indigo-500 text-white rounded-md hover:bg-indigo-600 disabled:bg-gray-300 transition-colors duration-150 shadow-sm font-medium"
+                      >
+                        Arrondir Point
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Bouton Exporter SVG poussé en bas */}
+            <div className="mt-auto p-3 bg-blue-50 rounded-md border border-blue-100">
+              <button
+                onClick={exportToSvg}
+                disabled={shapes.length === 0}
+                className="w-full px-4 py-2 bg-teal-500 text-white rounded-md hover:bg-teal-600 disabled:bg-gray-200 disabled:text-gray-400 transition-colors duration-150 shadow-sm"
+              >
+                PRODUCTION
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Zone du Canevas SVG */}
-      <div
-        className="w-full max-w-5xl h-[500px] bg-white shadow-md cursor-crosshair rounded-lg border border-indigo-200 overflow-hidden"
-        ref={svgCanvasRef}
-      >
-        <SvgCanvas
-          shapes={shapes}
-          currentPoints={currentPoints}
-          onCanvasClick={handleCanvasClick}
-          selectedShapeId={selectedShapeId}
-          onShapeClick={handleShapeClick}
-          selectedPointIndex={selectedPointIndex}
-          onVertexMouseDown={handleVertexMouseDown}
-          svgUnitsPerMm={svgUnitsPerMm}
-          isDraggingVertex={!!draggingVertexInfo}
-          snappedPreviewPoint={snappedPreviewPoint}
-          isDrawing={currentPoints.length > 0 && !draggingVertexInfo}
-          onSegmentRightClick={handleSegmentRightClick}
-        />
-      </div>
-      <footer className="w-full max-w-5xl mt-8 mb-4 text-center">
+      <footer className="w-full max-w-5xl mt-3 mb-2 text-center">
         <p className="text-xs text-indigo-300">
-          Projet de dessin vectoriel interactif - Amélioré par IA.
+          By{" "}
+          <a
+            href="https://glowsoft.fr"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-indigo-200 transition-colors"
+          >
+            Glowsoft
+          </a>
         </p>
       </footer>
     </div>
