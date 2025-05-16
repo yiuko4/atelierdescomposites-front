@@ -1,0 +1,149 @@
+[
+    {
+      "action": "PLIER",
+      "valeur": 31.59
+    },
+    {
+      "action": "SE_DÉPLACER",
+      "valeur": 271.048
+    },
+    {
+      "action": "PLIER",
+      "valeur": 58.41
+    },
+    {
+      "action": "AVANCER",
+      "valeur": 148
+    },
+    {
+      "action": "PLIER",
+      "valeur": -90
+    },
+    {
+      "action": "AVANCER",
+      "valeur": 207
+    },
+    {
+      "action": "PLIER",
+      "valeur": -90
+    },
+    {
+      "action": "AVANCER",
+      "valeur": 143
+    },
+    {
+      "action": "PLIER",
+      "valeur": 90
+    },
+    {
+      "action": "AVANCER",
+      "valeur": 96
+    },
+    {
+      "action": "PLIER",
+      "valeur": -144.94
+    },
+    {
+      "action": "AVANCER",
+      "valeur": 211.766
+    },
+    {
+      "action": "PLIER",
+      "valeur": -3.19
+    },
+    {
+      "action": "AVANCER",
+      "valeur": 1.671
+    },
+    {
+      "action": "PLIER",
+      "valeur": -6.38
+    },
+    {
+      "action": "AVANCER",
+      "valeur": 1.671
+    },
+    {
+      "action": "PLIER",
+      "valeur": -6.38
+    },
+    {
+      "action": "AVANCER",
+      "valeur": 1.671
+    },
+    {
+      "action": "PLIER",
+      "valeur": -6.38
+    },
+    {
+      "action": "AVANCER",
+      "valeur": 1.671
+    },
+    {
+      "action": "PLIER",
+      "valeur": -6.38
+    },
+    {
+      "action": "AVANCER",
+      "valeur": 1.671
+    },
+    {
+      "action": "PLIER",
+      "valeur": 353.62
+    },
+    {
+      "action": "AVANCER",
+      "valeur": 1.671
+    },
+    {
+      "action": "PLIER",
+      "valeur": -6.38
+    },
+    {
+      "action": "AVANCER",
+      "valeur": 1.671
+    },
+    {
+      "action": "PLIER",
+      "valeur": -6.38
+    },
+    {
+      "action": "AVANCER",
+      "valeur": 1.671
+    },
+    {
+      "action": "PLIER",
+      "valeur": -6.38
+    },
+    {
+      "action": "AVANCER",
+      "valeur": 1.671
+    },
+    {
+      "action": "PLIER",
+      "valeur": -6.38
+    },
+    {
+      "action": "AVANCER",
+      "valeur": 1.671
+    },
+    {
+      "action": "PLIER",
+      "valeur": -3.19
+    },
+    {
+      "action": "AVANCER",
+      "valeur": 243.969
+    },
+    {
+      "action": "PLIER",
+      "valeur": -151.21
+    },
+    {
+      "action": "AVANCER",
+      "valeur": 100
+    },
+    {
+      "action": "COUPER"
+    }
+  ]

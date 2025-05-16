@@ -1,99 +1,32 @@
-import React, { useState, useEffect, useRef } from "react";
-import "./index.css";
+import React, { useState, useEffect, useRef } from 'react';
 
-function App() {
-  const [etapes, setEtapes] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [isPopupOpen, setIsPopupOpen] = useState(false);
-
-  // Charger les étapes depuis le fichier JSON
-  useEffect(() => {
-    fetch('/etape-test.json')
-      .then(response => {
-        if (!response.ok) {
-          throw new Error('Erreur lors du chargement du fichier JSON');
-        }
-        return response.json();
-      })
-      .then(data => {
-        setEtapes(data);
-        setIsLoading(false);
-      })
-      .catch(error => {
-        console.error('Erreur:', error);
-        setError(error.message);
-        setIsLoading(false);
-      });
-  }, []);
-
-  return (
-    <div className="min-h-screen bg-blue-50">
-      <header className="bg-blue-600 text-white p-4 shadow-md flex justify-between items-center">
-        <h1 className="text-2xl font-bold">Atelier des Composites</h1>
-        <button
-          onClick={() => setIsPopupOpen(prev => !prev)}
-          className="bg-white text-blue-600 px-4 py-2 rounded-lg font-medium hover:bg-blue-50 transition-colors"
-        >
-          Visualiser la création
-        </button>
-      </header>
-      
-      <main className="container mx-auto p-6">
-        {isLoading ? (
-          <div className="text-center py-10">
-            <p className="text-lg text-gray-600">Chargement des données...</p>
-          </div>
-        ) : error ? (
-          <div className="text-center py-10">
-            <p className="text-lg text-red-600">Erreur: {error}</p>
-          </div>
-        ) : (
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <h2 className="text-xl font-semibold text-blue-800 mb-4">Informations sur la pièce</h2>
-            <p className="text-gray-700">
-              Cette pièce contient {etapes.length} étapes de création.
-            </p>
-            
-            {isPopupOpen && <PieceCreationVisualizer etapes={etapes} onClose={() => setIsPopupOpen(false)} />}
-          </div>
-        )}
-      </main>
-    </div>
-  );
-}
-
-// Composant pour visualiser la création de la pièce étape par étape
-function PieceCreationVisualizer({ etapes, onClose }) {
+const PieceCreationPopup = ({ isOpen, onClose, etapes }) => {
   const [currentStep, setCurrentStep] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [speed, setSpeed] = useState(1);
+  const [speed, setSpeed] = useState(1); // Vitesse de l'animation (1 = normal)
   const canvasRef = useRef(null);
   const animationRef = useRef(null);
   
-  // Dimensions du canvas
-  const canvasWidth = 800;
-  const canvasHeight = 600;
-  
-  // Position et orientation actuelles (au centre du canvas)
-  const positionRef = useRef({ x: canvasWidth / 2, y: canvasHeight / 2, angle: 0 });
+  // Position et orientation actuelles
+  const positionRef = useRef({ x: 400, y: 300, angle: 0 });
   
   // Historique des points pour dessiner le tracé
-  const [points, setPoints] = useState([{ x: canvasWidth / 2, y: canvasHeight / 2 }]);
+  const [points, setPoints] = useState([{ x: 400, y: 300 }]);
   
-  // Réinitialiser l'animation quand le composant est monté
+  // Réinitialiser l'animation quand le popup s'ouvre
   useEffect(() => {
-    setCurrentStep(0);
-    setPoints([{ x: canvasWidth / 2, y: canvasHeight / 2 }]);
-    positionRef.current = { x: canvasWidth / 2, y: canvasHeight / 2, angle: 0 };
-    drawCanvas();
-    
-    return () => {
+    if (isOpen) {
+      setCurrentStep(0);
+      setPoints([{ x: 400, y: 300 }]);
+      positionRef.current = { x: 400, y: 300, angle: 0 };
+      drawCanvas();
+    } else {
+      // Arrêter l'animation si le popup se ferme
       if (animationRef.current) {
         clearTimeout(animationRef.current);
       }
-    };
-  }, []);
+    }
+  }, [isOpen]);
   
   // Mettre à jour le canvas quand les points changent
   useEffect(() => {
@@ -176,28 +109,20 @@ function PieceCreationVisualizer({ etapes, onClose }) {
     ctx.fillStyle = '#f0f0f0';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     
-    // Calculer le décalage pour centrer sur la position actuelle
-    const offsetX = canvasWidth / 2 - positionRef.current.x;
-    const offsetY = canvasHeight / 2 - positionRef.current.y;
-    
-    // Appliquer la translation pour centrer sur la position actuelle
-    ctx.save();
-    ctx.translate(offsetX, offsetY);
-    
     // Dessiner les axes
     ctx.strokeStyle = '#ddd';
     ctx.lineWidth = 1;
     
     // Axe horizontal
     ctx.beginPath();
-    ctx.moveTo(0, canvasHeight / 2 - offsetY);
-    ctx.lineTo(canvasWidth, canvasHeight / 2 - offsetY);
+    ctx.moveTo(0, canvas.height / 2);
+    ctx.lineTo(canvas.width, canvas.height / 2);
     ctx.stroke();
     
     // Axe vertical
     ctx.beginPath();
-    ctx.moveTo(canvasWidth / 2 - offsetX, 0);
-    ctx.lineTo(canvasWidth / 2 - offsetX, canvasHeight);
+    ctx.moveTo(canvas.width / 2, 0);
+    ctx.lineTo(canvas.width / 2, canvas.height);
     ctx.stroke();
     
     // Dessiner le tracé
@@ -244,9 +169,6 @@ function PieceCreationVisualizer({ etapes, onClose }) {
     ctx.moveTo(positionRef.current.x, positionRef.current.y);
     ctx.lineTo(dirX, dirY);
     ctx.stroke();
-    
-    // Restaurer le contexte
-    ctx.restore();
   };
   
   // Passer à l'étape suivante manuellement
@@ -262,8 +184,8 @@ function PieceCreationVisualizer({ etapes, onClose }) {
     if (currentStep > 0) {
       // Pour revenir en arrière, on doit réexécuter toutes les étapes depuis le début
       setCurrentStep(prev => prev - 1);
-      setPoints([{ x: canvasWidth / 2, y: canvasHeight / 2 }]);
-      positionRef.current = { x: canvasWidth / 2, y: canvasHeight / 2, angle: 0 };
+      setPoints([{ x: 400, y: 300 }]);
+      positionRef.current = { x: 400, y: 300, angle: 0 };
       
       // Réexécuter toutes les étapes jusqu'à la nouvelle étape courante
       for (let i = 0; i <= currentStep - 1; i++) {
@@ -280,8 +202,8 @@ function PieceCreationVisualizer({ etapes, onClose }) {
   // Réinitialiser l'animation
   const handleReset = () => {
     setCurrentStep(0);
-    setPoints([{ x: canvasWidth / 2, y: canvasHeight / 2 }]);
-    positionRef.current = { x: canvasWidth / 2, y: canvasHeight / 2, angle: 0 };
+    setPoints([{ x: 400, y: 300 }]);
+    positionRef.current = { x: 400, y: 300, angle: 0 };
     setIsPlaying(false);
   };
   
@@ -289,6 +211,8 @@ function PieceCreationVisualizer({ etapes, onClose }) {
   const handleSpeedChange = (e) => {
     setSpeed(parseFloat(e.target.value));
   };
+  
+  if (!isOpen) return null;
   
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -324,8 +248,8 @@ function PieceCreationVisualizer({ etapes, onClose }) {
           <div className="flex justify-center">
             <canvas 
               ref={canvasRef} 
-              width={canvasWidth} 
-              height={canvasHeight}
+              width={800} 
+              height={600}
               className="border border-gray-300 rounded-lg"
             />
           </div>
@@ -395,6 +319,6 @@ function PieceCreationVisualizer({ etapes, onClose }) {
       </div>
     </div>
   );
-}
+};
 
-export default App;
+export default PieceCreationPopup;
