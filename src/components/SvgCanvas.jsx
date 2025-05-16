@@ -63,12 +63,12 @@ function SvgCanvas({
     .join(" ");
 
   return (
-    <div className="w-full h-full border border-gray-300">
+    <div className="w-full h-full">
       <svg
         width="100%"
         height="100%"
         onClick={onCanvasClick}
-        style={svgStyle}
+        style={{ ...svgStyle, display: "block" }}
         ref={svgRef}
       >
         {/* Affichage des formes finalisées */}
