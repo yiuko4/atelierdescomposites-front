@@ -29,6 +29,7 @@ function SvgCanvas({
   snappedPreviewPoint,
   isDrawing,
   onSegmentRightClick,
+  displayedAngles,
 }) {
   const currentPathPoints = currentPoints.map((p) => `${p.x},${p.y}`).join(" ");
   const svgRef = useRef(null);
@@ -337,6 +338,23 @@ function SvgCanvas({
             style={{ pointerEvents: "none" }}
           />
         )}
+
+        {/* Rendu des angles */}
+        {displayedAngles &&
+          displayedAngles.map((angle) => (
+            <text
+              key={angle.id}
+              x={angle.x}
+              y={angle.y}
+              fontSize="10"
+              fill="purple" // Couleur distincte pour les angles
+              textAnchor="middle"
+              dominantBaseline="middle"
+              style={{ pointerEvents: "none" }}
+            >
+              {angle.value}°
+            </text>
+          ))}
       </svg>
     </div>
   );

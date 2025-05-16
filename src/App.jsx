@@ -43,6 +43,9 @@ const V = {
 const MOVE_THRESHOLD = 5; // Pixels
 const HOLD_DELAY = 100; // Millisecondes
 
+const TEXT_OFFSET_FOR_ANGLES = 15; // Décalage pour l'affichage du texte des angles
+const MIN_ANGLE_FOR_PRODUCTION = 65; // Angle minimum requis pour la production
+
 function App() {
   const [shapes, setShapes] = useState([]);
   const [currentPoints, setCurrentPoints] = useState([]);
@@ -59,6 +62,8 @@ function App() {
   const [history, setHistory] = useState([]); // Historique des états précédents
   const [future, setFuture] = useState([]); // Historique des états annulés (pour rétablir)
   const [isUndoRedoAction, setIsUndoRedoAction] = useState(false); // Flag pour éviter d'ajouter les actions d'annulation/rétablissement elles-mêmes à l'historique
+  const [displayedAngles, setDisplayedAngles] = useState([]);
+  const [hasTooSmallAngles, setHasTooSmallAngles] = useState(false); // Nouvel état pour les angles trop petits
 
   const svgCanvasRef = useRef(null);
   const vertexPressTimer = useRef(null); // Pour le délai du clic maintenu
@@ -302,6 +307,99 @@ function App() {
       setSnappedPreviewPoint(null);
     }
   }, [draggingVertexInfo, currentPoints]);
+
+  // Fonction pour calculer les angles d'une forme donnée
+  const calculateAnglesForShape = useCallback(
+    (shapePoints, isPolygon, shapeId) => {
+      if (!shapePoints || shapePoints.length < (isPolygon ? 3 : 2)) {
+        return [];
+      }
+
+      const angles = [];
+      const numPoints = shapePoints.length;
+
+      for (let i = 0; i < numPoints; i++) {
+        if (!isPolygon && (i === 0 || i === numPoints - 1)) {
+          // Pas d'angle aux extrémités d'une polyligne
+          continue;
+        }
+
+        const P = shapePoints[i];
+        const P_prev =
+          shapePoints[isPolygon ? (i - 1 + numPoints) % numPoints : i - 1];
+        const P_next = shapePoints[isPolygon ? (i + 1) % numPoints : i + 1];
+
+        if (!P_prev || !P_next) continue;
+
+        const v1 = V.subtract(P_prev, P);
+        const v2 = V.subtract(P_next, P);
+
+        const mag_v1 = V.magnitude(v1);
+        const mag_v2 = V.magnitude(v2);
+
+        if (mag_v1 === 0 || mag_v2 === 0) continue;
+
+        const norm_v1 = V.normalize(v1);
+        const norm_v2 = V.normalize(v2);
+
+        const dotProduct = V.dot(norm_v1, norm_v2);
+        const clampedDotProduct = Math.max(-1, Math.min(1, dotProduct));
+        const angleRad = Math.acos(clampedDotProduct);
+        const angleDeg = parseFloat((angleRad * (180 / Math.PI)).toFixed(1));
+
+        const bisector_sum = V.add(norm_v1, norm_v2);
+        let text_pos_offset_dir = V.normalize(bisector_sum);
+
+        if (text_pos_offset_dir.x === 0 && text_pos_offset_dir.y === 0) {
+          text_pos_offset_dir = V.normalize(V.perpendicular(norm_v1));
+        }
+
+        const textPos = V.add(
+          P,
+          V.scale(text_pos_offset_dir, -TEXT_OFFSET_FOR_ANGLES)
+        );
+
+        angles.push({
+          id: "angle-" + shapeId + "-p" + i,
+          x: textPos.x,
+          y: textPos.y,
+          value: angleDeg,
+          pointBeingAnnotated: P,
+        });
+      }
+      return angles;
+    },
+    []
+  );
+
+  // useEffect pour calculer les angles lorsque les formes changent
+  useEffect(() => {
+    const allAngles = [];
+    shapes.forEach((shape) => {
+      if (
+        (shape.type === "polygon" || shape.type === "polyline") &&
+        shape.points
+      ) {
+        const shapeAngles = calculateAnglesForShape(
+          shape.points,
+          shape.type === "polygon",
+          shape.id
+        );
+        allAngles.push(...shapeAngles);
+      }
+    });
+    setDisplayedAngles(allAngles);
+
+    // Vérifier si des angles sont trop petits pour la production
+    let smallAngleFound = false;
+    for (const angle of allAngles) {
+      if (angle.value < MIN_ANGLE_FOR_PRODUCTION) {
+        smallAngleFound = true;
+        break;
+      }
+    }
+    setHasTooSmallAngles(smallAngleFound);
+  }, [shapes, calculateAnglesForShape]);
 
   const addRectangle = () => {
     const newRect = {
@@ -653,6 +751,36 @@ function App() {
   };
 
   const exportToSvg = async () => {
+    // Vérification des angles avant de continuer
+    for (const shape of shapes) {
+      if (
+        (shape.type === "polygon" || shape.type === "polyline") &&
+        shape.points
+      ) {
+        const anglesOfShape = calculateAnglesForShape(
+          shape.points,
+          shape.type === "polygon",
+          shape.id
+        );
+        for (const angleInfo of anglesOfShape) {
+          if (angleInfo.value < MIN_ANGLE_FOR_PRODUCTION) {
+            alert(
+              `Production impossible : La forme "${
+                shape.id
+              }" contient un angle de ${
+                angleInfo.value
+              }° au sommet près du point (${angleInfo.pointBeingAnnotated.x.toFixed(
+                1
+              )}, ${angleInfo.pointBeingAnnotated.y.toFixed(
+                1
+              )}). L'angle minimum requis est de ${MIN_ANGLE_FOR_PRODUCTION}°.`
+            );
+            return; // Arrêter le processus d'exportation
+          }
+        }
+      }
+    }
+
     const svgWidth =
       document.querySelector(".bg-white.shadow-lg svg")?.clientWidth || 600;
     const svgHeight =
@@ -947,6 +1075,7 @@ function App() {
             snappedPreviewPoint={snappedPreviewPoint}
             isDrawing={currentPoints.length > 0 && !draggingVertexInfo}
             onSegmentRightClick={handleSegmentRightClick}
+            displayedAngles={displayedAngles}
           />
         </div>
 
@@ -1039,10 +1168,16 @@ function App() {
             <div className="mt-auto p-3 bg-blue-50 rounded-md border border-blue-100 flex flex-col gap-2">
               <button
                 onClick={exportToSvg}
-                disabled={shapes.length === 0 || isInProduction} // Désactivé si en production ou pas de formes
+                disabled={
+                  shapes.length === 0 || isInProduction || hasTooSmallAngles
+                }
                 className="w-full px-4 py-2 bg-teal-500 text-white rounded-md hover:bg-teal-600 disabled:bg-gray-400 disabled:text-gray-500 disabled:cursor-not-allowed transition-colors duration-150 shadow-sm"
               >
-                {isInProduction ? "PRODUCTION EN COURS..." : "PRODUCTION"}
+                {isInProduction
+                  ? "PRODUCTION EN COURS..."
+                  : hasTooSmallAngles
+                  ? `Angle(s) < ${MIN_ANGLE_FOR_PRODUCTION}°!`
+                  : "PRODUCTION"}
               </button>
               <button
                 onClick={handleStopProduction}
