@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import SvgCanvas from "./components/SvgCanvas";
+import PieceCreationVisualizer from "./components/PieceCreationVisualizer";
 import "./index.css";
 
 // --- Fonctions utilitaires pour la géométrie vectorielle ---
@@ -44,6 +45,28 @@ const MOVE_THRESHOLD = 5; // Pixels
 const HOLD_DELAY = 100; // Millisecondes
 
 function App() {
+  const [isPopupOpen, setIsPopupOpen] = useState(false);
+const [etapes, setEtapes] = useState([]);
+const [isLoading, setIsLoading] = useState(true);
+const [error, setError] = useState(null);
+
+useEffect(() => {
+  fetch("/etape-test.json")
+    .then((res) => {
+      if (!res.ok) throw new Error("Erreur chargement JSON");
+      return res.json();
+    })
+    .then((data) => {
+      setEtapes(data);
+      setIsLoading(false);
+    })
+    .catch((err) => {
+      console.error(err);
+      setError(err.message);
+      setIsLoading(false);
+    });
+}, []);
+
   const [shapes, setShapes] = useState([]);
   const [currentPoints, setCurrentPoints] = useState([]);
   const [selectedShapeId, setSelectedShapeId] = useState(null);
@@ -1037,6 +1060,12 @@ function App() {
 
             {/* Bouton Exporter SVG poussé en bas */}
             <div className="mt-auto p-3 bg-blue-50 rounded-md border border-blue-100 flex flex-col gap-2">
+            <button
+  onClick={() => setIsPopupOpen((prev) => !prev)}
+  className="px-4 py-2 bg-purple-500 text-white rounded-md hover:bg-purple-600 transition-colors duration-150 shadow-sm"
+>
+  Visualiser la création
+</button>
               <button
                 onClick={exportToSvg}
                 disabled={shapes.length === 0 || isInProduction} // Désactivé si en production ou pas de formes
@@ -1054,6 +1083,24 @@ function App() {
             </div>
           </div>
         </div>
+        <>
+  {isPopupOpen && (
+    <PieceCreationVisualizer
+      etapes={etapes}
+      onClose={() => setIsPopupOpen(false)}
+    />
+  )}
+
+  {isLoading && (
+    <p className="text-center mt-4 text-blue-600">
+      Chargement des étapes...
+    </p>
+  )}
+
+  {error && (
+    <p className="text-center mt-4 text-red-600">Erreur : {error}</p>
+  )}
+</>
       </div>
 
       <footer className="w-full max-w-5xl mt-3 mb-2 text-center">
