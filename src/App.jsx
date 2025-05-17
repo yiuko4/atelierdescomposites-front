@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import PieceCreationVisualizer from "./components/PieceCreationVisualizer";
 import SvgCanvas from "./components/SvgCanvas";
+import ProductionTracker from "./components/ProductionTracker";
+import SaveSVGModal from './components/SaveSVGModal';
+import SVGLibraryPanel from './components/SVGLibraryPanel';
 import "./index.css";
 
 // --- Fonctions utilitaires pour la géométrie vectorielle ---
@@ -80,6 +83,9 @@ function App() {
   const [isOrthogonalMode, setIsOrthogonalMode] = useState(false);
   const [snappedPreviewPoint, setSnappedPreviewPoint] = useState(null);
   const [isInProduction, setIsInProduction] = useState(false); // Nouvel état pour la production
+  const [showProductionTracker, setShowProductionTracker] = useState(false); // État pour afficher le suivi de production
+  const [showSaveModal, setShowSaveModal] = useState(false); // État pour afficher le modal de sauvegarde SVG
+  const [showSVGLibrary, setShowSVGLibrary] = useState(true); // État pour afficher la bibliothèque SVG dans le panneau de gauche
 
   // États pour l'annulation et le rétablissement
   const [history, setHistory] = useState([]); // Historique des états précédents
@@ -912,146 +918,85 @@ function App() {
   };
 
   const exportToSvg = async () => {
-    // Vérification des angles avant de continuer
-    for (const shape of shapes) {
-      if (
-        (shape.type === "polygon" || shape.type === "polyline") &&
-        shape.points
-      ) {
-        const anglesOfShape = calculateAnglesForShape(
-          shape.points,
-          shape.type === "polygon",
-          shape.id
-        );
-        for (const angleInfo of anglesOfShape) {
-          if (angleInfo.value < MIN_ANGLE_FOR_PRODUCTION) {
-            alert(
-              `Production impossible : La forme "${
-                shape.id
-              }" contient un angle de ${
-                angleInfo.value
-              }° au sommet près du point (${angleInfo.pointBeingAnnotated.x.toFixed(
-                1
-              )}, ${angleInfo.pointBeingAnnotated.y.toFixed(
-                1
-              )}). L'angle minimum requis est de ${MIN_ANGLE_FOR_PRODUCTION}°.`
-            );
-            return; // Arrêter le processus d'exportation
-          }
-        }
-      }
+    const selectedShape = shapes.find((s) => s.id === selectedShapeId);
+    
+    if (!selectedShape) {
+      // Inform user to create or select a shape first
+      alert(
+        "Vous devez d'abord créer ou sélectionner une forme pour l'exporter."
+      );
+      return;
     }
 
-    const svgWidth =
-      document.querySelector(".bg-white.shadow-lg svg")?.clientWidth || 600;
-    const svgHeight =
-      document.querySelector(".bg-white.shadow-lg svg")?.clientHeight || 400;
+    if (hasTooSmallAngles) {
+      alert(
+        `Cette forme a des angles trop petits (inférieurs à ${MIN_ANGLE_FOR_PRODUCTION}°).\nLa production pourrait échouer avec de tels angles.`
+      );
+      return;
+    }
 
-    let svgString = `<svg width="${svgWidth}" height="${svgHeight}" xmlns="http://www.w3.org/2000/svg">\n`;
-
-    shapes.forEach((shape) => {
-      if (shape.type === "rect") {
-        svgString += `  <rect x="${shape.x}" y="${shape.y}" width="${
-          shape.width
-        }" height="${shape.height}" fill="${shape.fill}" stroke="${
-          shape.stroke || "none"
-        }" stroke-width="${shape.strokeWidth || 0}" />\n`;
-      } else if (shape.type === "polygon" && shape.points) {
-        const pointsStr = shape.points.map((p) => `${p.x},${p.y}`).join(" ");
-        svgString += `  <polygon points="${pointsStr}" fill="${
-          shape.fill
-        }" stroke="${shape.stroke || "black"}" stroke-width="${
-          shape.strokeWidth || 1
-        }" />\n`;
-      } else if (shape.type === "polyline" && shape.points) {
-        const pointsStr = shape.points.map((p) => `${p.x},${p.y}`).join(" ");
-        svgString += `  <polyline points="${pointsStr}" fill="${
-          shape.fill || "none"
-        }" stroke="${shape.stroke || "black"}" stroke-width="${
-          shape.strokeWidth || 1
-        }" />\n`;
-      }
-    });
-
-    svgString += `</svg>`;
-
-    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "";
-    const apiUrlPath = `${apiBaseUrl}/api/direct/svg-to-sequence`;
-
-    const svgBlob = new Blob([svgString], { type: "image/svg+xml" });
-    const formData = new FormData();
-    formData.append("svgfile", svgBlob, "atelier_export.svg"); // 'svgfile' est le nom du champ attendu par l'API
-    formData.append("sendToApi", "true"); // Envoyer comme chaîne, le backend devrait le convertir en booléen
-    formData.append("closePolygons", "true"); // Valeur par défaut, peut être rendue configurable
+    setIsInProduction(true);
 
     try {
-      const response = await fetch(apiUrlPath, {
-        method: "POST",
-        // NE PAS définir Content-Type ici, le navigateur le fera pour multipart/form-data
-        body: formData,
-      });
+      const svgPoints = selectedShape.points.map((p) => ({
+        x: p.x,
+        y: p.y,
+      }));
 
-      const result = await response.json();
+      // Prepare SVG content
+      const svgWidth = 800;
+      const svgHeight = 600;
+      const svgContent = `
+      <svg width="${svgWidth}" height="${svgHeight}" xmlns="http://www.w3.org/2000/svg">
+        <polygon points="${svgPoints
+          .map((p) => `${p.x},${p.y}`)
+          .join(" ")}" fill="none" stroke="black" />
+      </svg>
+      `;
 
-      if (response.ok) {
-        console.log(
-          "SVG envoyé et traité avec succès par l'API (direct):",
-          result
-        );
-        alert(
-          `Opération réussie: ${result.message}
-Fichier original: ${result.originalFilename}
-Séquence: ${result.sequenceFile}`
-        );
-        setIsInProduction(true); // Mettre à jour l'état de production
+      // Create Blob and File from SVG content
+      const blob = new Blob([svgContent], { type: "image/svg+xml" });
+      const file = new File([blob], "shape.svg", { type: "image/svg+xml" });
 
-        // Supposons que result.sequenceData contient les étapes pour le visualiseur
-        // Vous devrez ajuster "result.sequenceData" à la clé réelle de votre API
-        // MISE À JOUR : Selon la documentation, la clé est "actions"
-        if (result.actions && Array.isArray(result.actions)) {
-          setProductionSequence(result.actions); // Utiliser result.actions
-          setShowProductionVisualizer(true); // Ouvrir le visualiseur avec les nouvelles étapes
-        } else if (result.sequenceFile) {
-          // Si result.actions n'est pas là, mais sequenceFile l'est,
-          // cela pourrait indiquer un problème ou une réponse API inattendue.
-          // Pour l'instant, affichons un avertissement.
-          console.warn(
-            "result.actions non trouvé ou n'est pas un tableau. Les étapes de production ne peuvent pas être visualisées directement. Fichier de séquence disponible:",
-            result.sequenceFile
-          );
-          setProductionSequence(null); // Assurer qu'on n'utilise pas d'anciennes données
-          setShowProductionVisualizer(false); // Ne pas tenter d'ouvrir le visualiseur
-        } else {
-          // Ni sequenceData ni sequenceFile, ou format incorrect
-          console.warn(
-            "Aucune donnée de séquence valide reçue de l'API pour la visualisation."
-          );
-          setProductionSequence(null);
-          setShowProductionVisualizer(false);
+      // Prepare form data for API request
+      const formData = new FormData();
+      formData.append("svgfile", file);
+      formData.append("sendToApi", "true"); // Envoyer à l'API machine
+      formData.append("closePolygons", "true"); // Fermer les polygones
+
+      // Send request to SVG API
+      const response = await fetch(
+        "http://localhost:30001/api/direct/svg-to-sequence",
+        {
+          method: "POST",
+          body: formData,
         }
+      );
+
+      const data = await response.json();
+
+      if (data.success) {
+        console.log("Export réussi:", data);
+
+        // Store the production sequence and show visualizer if available
+        if (data.actions && data.actions.length > 0) {
+          setProductionSequence(data.actions);
+          setShowProductionVisualizer(true);
+        }
+        
+        // Afficher le suivi de production après un délai pour permettre au serveur de mettre à jour le statut
+        setTimeout(() => {
+          setShowProductionTracker(true);
+        }, 1000);
       } else {
-        console.error(
-          "Erreur de l'API lors du traitement direct du SVG:",
-          result
-        );
-        alert(
-          `Erreur ${response.status} de l\'API: ${
-            result.message || "Erreur inconnue du serveur"
-          }`
-        );
-        setProductionSequence(null); // Effacer les anciennes séquences en cas d'erreur
-        setShowProductionVisualizer(false);
-        // Laisser isInProduction à false ou le remettre à false si nécessaire (déjà géré plus bas pour API stop)
+        console.error("Erreur d'export:", data.message);
+        alert(`Erreur lors de l'exportation: ${data.message}`);
       }
     } catch (error) {
-      console.error(
-        "Erreur de connexion ou lors de l'envoi direct du SVG:",
-        error
-      );
-      alert(`Erreur de connexion au serveur: ${error.message}`);
-      setProductionSequence(null); // Effacer les anciennes séquences en cas d'erreur
-      setShowProductionVisualizer(false);
-      // Laisser isInProduction à false ou le remettre à false si nécessaire (déjà géré plus bas pour API stop)
+      console.error("Erreur lors de l'export:", error);
+      alert("Une erreur est survenue lors de l'exportation.");
+    } finally {
+      setIsInProduction(false);
     }
   };
 
@@ -1320,37 +1265,188 @@ Séquence: ${result.sequenceFile}`
     // On ne vide pas currentPoints car on pourrait vouloir continuer un dessin en cours
   };
 
+  // Fonction pour générer le contenu SVG de la forme sélectionnée
+  const generateSvgContent = () => {
+    const selectedShape = shapes.find((s) => s.id === selectedShapeId);
+    if (!selectedShape) return null;
+    
+    const svgPoints = selectedShape.points.map((p) => ({
+      x: p.x,
+      y: p.y,
+    }));
+
+    // Prepare SVG content
+    const svgWidth = 800;
+    const svgHeight = 600;
+    return `
+    <svg width="${svgWidth}" height="${svgHeight}" xmlns="http://www.w3.org/2000/svg">
+      <polygon points="${svgPoints
+        .map((p) => `${p.x},${p.y}`)
+        .join(" ")}" fill="none" stroke="black" />
+    </svg>
+    `;
+  };
+  
+  // Fonction pour sauvegarder la forme actuelle dans la bibliothèque
+  const handleSaveToLibrary = () => {
+    const selectedShape = shapes.find((s) => s.id === selectedShapeId);
+    
+    if (!selectedShape) {
+      // Inform user to create or select a shape first
+      alert(
+        "Vous devez d'abord créer ou sélectionner une forme pour la sauvegarder."
+      );
+      return;
+    }
+    
+    setShowSaveModal(true);
+  };
+  
+  // Callback lorsque la sauvegarde est réussie
+  const handleSaveSuccess = (savedPiece) => {
+    // Affiche un message de succès
+    alert(`La pièce "${savedPiece.name}" a été sauvegardée avec succès dans la bibliothèque.`);
+    // Rafraîchit la bibliothèque si elle est visible
+    setShowSVGLibrary(true);
+  };
+  
+  // Fonction pour charger une forme depuis la bibliothèque
+  const handleSelectSVGFromLibrary = (piece) => {
+    try {
+      // Parse SVG content
+      const parser = new DOMParser();
+      const svgDoc = parser.parseFromString(piece.svgContent, "image/svg+xml");
+      const polygon = svgDoc.querySelector("polygon");
+      
+      if (!polygon) {
+        throw new Error("Format SVG non supporté. Seuls les polygones simples sont pris en charge.");
+      }
+      
+      // Extract points from polygon
+      const pointsStr = polygon.getAttribute("points");
+      const pointPairs = pointsStr.trim().split(" ");
+      const points = pointPairs.map(pair => {
+        const [x, y] = pair.split(",");
+        return { x: parseFloat(x), y: parseFloat(y) };
+      });
+      
+      // Create a new shape from the SVG
+      const newShape = {
+        id: Date.now().toString(),
+        type: "polygon",
+        points: points,
+        fill: "rgba(0, 120, 255, 0.1)",
+      };
+      
+      // Add the shape and select it
+      addToHistory({
+        type: "shapes",
+        shapes: JSON.parse(JSON.stringify(shapes))
+      });
+      setShapes([...shapes, newShape]);
+      setSelectedShapeId(newShape.id);
+      
+      // Display success message
+      alert(`La pièce "${piece.name}" a été chargée avec succès.`);
+    } catch (error) {
+      console.error("Erreur lors du chargement de la pièce:", error);
+      alert(`Erreur lors du chargement de la pièce: ${error.message}`);
+    }
+  };
+
   return (
-    <div className="flex flex-col items-center justify-start h-screen bg-gradient-to-b from-blue-50 to-indigo-100 text-slate-700 p-4 font-sans">
-      <header className="w-full max-w-5xl mb-3 text-center">
-        <h1 className="text-4xl font-bold mb-2 text-indigo-600 tracking-wider">
-          Atelier des composites
-        </h1>
+    <div className="bg-gray-100 min-h-screen">
+      <header className="bg-indigo-700 text-white p-4 shadow-md">
+        <div className="container mx-auto flex justify-between items-center">
+          <h1 className="text-2xl font-bold tracking-tight">
+            Atelier des Composites - Conception SVG
+          </h1>
+          <div className="flex space-x-4">
+            <button
+              onClick={() => setShowProductionTracker(!showProductionTracker)}
+              className={`px-4 py-2 rounded-md transition-colors ${
+                showProductionTracker
+                  ? "bg-indigo-900 hover:bg-indigo-800"
+                  : "bg-indigo-600 hover:bg-indigo-500"
+              }`}
+            >
+              {showProductionTracker ? "Masquer le suivi" : "Suivi de production"}
+            </button>
+            <button
+              onClick={() => setShowSVGLibrary(!showSVGLibrary)}
+              className={`px-4 py-2 rounded-md transition-colors ${
+                showSVGLibrary
+                  ? "bg-indigo-900 hover:bg-indigo-800"
+                  : "bg-indigo-600 hover:bg-indigo-500"
+              }`}
+            >
+              {showSVGLibrary ? "Masquer la bibliothèque" : "Bibliothèque de pièces"}
+            </button>
+          </div>
+        </div>
       </header>
+
+      {/* Production Tracker Modal */}
+      {showProductionTracker && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 z-50 flex items-center justify-center p-4">
+          <div className="w-full max-w-6xl max-h-[90vh] flex flex-col bg-white rounded-lg shadow-xl overflow-hidden">
+            <div className="flex-grow overflow-auto">
+              <ProductionTracker apiBaseUrl="http://localhost:30001/api" />
+            </div>
+            <div className="p-4 bg-gray-100 border-t flex justify-end">
+              <button
+                onClick={() => setShowProductionTracker(false)}
+                className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 transition-colors"
+              >
+                Fermer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de sauvegarde SVG */}
+      {showSaveModal && (
+        <SaveSVGModal
+          isOpen={showSaveModal}
+          onClose={() => setShowSaveModal(false)}
+          svgContent={generateSvgContent()}
+          onSaveSuccess={handleSaveSuccess}
+        />
+      )}
 
       {/* Conteneur principal pour le canvas et les panneaux latéraux */}
       <div
         className="w-full max-w-7xl flex flex-col md:flex-row gap-4 flex-1"
         style={{ height: "calc(100vh - 150px)" }}
       >
-        {/* Colonne de gauche : Historique des pièces */}
+        {/* Colonne de gauche : Bibliothèque de pièces SVG */}
         <div className="md:w-[20%] w-full" style={{ height: "100%" }}>
           <div className="p-4 border border-indigo-200 bg-white rounded-lg shadow-md flex flex-col h-full gap-4">
-            {/* En-tête du panneau */}
-            <div className="p-3 bg-blue-50 rounded-md border border-blue-100">
-              <h2 className="text-lg font-semibold text-indigo-600 mb-2">
-                Historique
-              </h2>
-              <p className="text-sm text-slate-600">Pièces enregistrées</p>
-            </div>
+            {showSVGLibrary ? (
+              <SVGLibraryPanel 
+                onSelectSVG={handleSelectSVGFromLibrary}
+                apiBaseUrl="http://localhost:30001/api"
+              />
+            ) : (
+              <>
+                {/* En-tête du panneau */}
+                <div className="p-3 bg-blue-50 rounded-md border border-blue-100">
+                  <h2 className="text-lg font-semibold text-indigo-600 mb-2">
+                    Historique
+                  </h2>
+                  <p className="text-sm text-slate-600">Pièces enregistrées</p>
+                </div>
 
-            {/* Contenu à remplir plus tard */}
-            <div className="flex-grow bg-gray-50 rounded-md p-2 border border-gray-100">
-              {/* Emplacement futur pour l'historique des pièces SVG */}
-              <p className="text-sm text-gray-400 italic text-center mt-4">
-                L'historique des pièces sera affiché ici
-              </p>
-            </div>
+                {/* Contenu à remplir plus tard */}
+                <div className="flex-grow bg-gray-50 rounded-md p-2 border border-gray-100">
+                  {/* Emplacement futur pour l'historique des pièces SVG */}
+                  <p className="text-sm text-gray-400 italic text-center mt-4">
+                    L'historique des pièces sera affiché ici
+                  </p>
+                </div>
+              </>
+            )}
           </div>
         </div>
 
@@ -1588,6 +1684,13 @@ Séquence: ${result.sequenceFile}`
                 Visualiser la création
               </button>
               <button
+                onClick={handleSaveToLibrary}
+                disabled={shapes.length === 0 || !selectedShapeId}
+                className="px-4 py-2 bg-indigo-500 text-white rounded-md hover:bg-indigo-600 disabled:bg-gray-400 disabled:text-gray-500 disabled:cursor-not-allowed transition-colors duration-150 shadow-sm"
+              >
+                Sauvegarder dans la bibliothèque
+              </button>
+              <button
                 onClick={exportToSvg}
                 disabled={
                   shapes.length === 0 || isInProduction || hasTooSmallAngles
@@ -1624,6 +1727,24 @@ Séquence: ${result.sequenceFile}`
                 setShowProductionVisualizer(false);
               }}
             />
+          )}
+
+          {showProductionTracker && (
+            <div className="fixed inset-0 bg-black bg-opacity-75 z-50 flex items-center justify-center p-4">
+              <div className="w-full max-w-6xl max-h-[90vh] flex flex-col bg-white rounded-lg shadow-xl overflow-hidden">
+                <div className="flex-grow overflow-auto">
+                  <ProductionTracker apiBaseUrl="http://localhost:30001/api" />
+                </div>
+                <div className="p-4 bg-gray-100 border-t flex justify-end">
+                  <button
+                    onClick={() => setShowProductionTracker(false)}
+                    className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 transition-colors"
+                  >
+                    Fermer
+                  </button>
+                </div>
+              </div>
+            </div>
           )}
 
           {isLoading && (
