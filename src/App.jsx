@@ -1355,37 +1355,204 @@ function App() {
   };
 
   return (
-    <div className="bg-gray-100 min-h-screen">
-      <header className="bg-indigo-700 text-white p-4 shadow-md">
+    <div className="bg-gray-100 min-h-screen flex flex-col">
+      {/* Header Bar */}
+      <header className="bg-indigo-700 text-white p-3 shadow-md">
         <div className="container mx-auto flex justify-between items-center">
-          <h1 className="text-2xl font-bold tracking-tight">
-            Atelier des Composites - Conception SVG
+          <h1 className="text-xl font-bold tracking-tight">
+            Atelier des Composites
           </h1>
-          <div className="flex space-x-4">
+          <div className="flex space-x-2">
             <button
               onClick={() => setShowProductionTracker(!showProductionTracker)}
-              className={`px-4 py-2 rounded-md transition-colors ${
-                showProductionTracker
-                  ? "bg-indigo-900 hover:bg-indigo-800"
-                  : "bg-indigo-600 hover:bg-indigo-500"
-              }`}
+              className="px-3 py-1.5 rounded-md transition-colors text-sm bg-indigo-600 hover:bg-indigo-500"
             >
-              {showProductionTracker ? "Masquer le suivi" : "Suivi de production"}
+              Suivi de production
             </button>
             <button
               onClick={() => setShowSVGLibrary(!showSVGLibrary)}
-              className={`px-4 py-2 rounded-md transition-colors ${
-                showSVGLibrary
-                  ? "bg-indigo-900 hover:bg-indigo-800"
-                  : "bg-indigo-600 hover:bg-indigo-500"
-              }`}
+              className="px-3 py-1.5 rounded-md transition-colors text-sm bg-indigo-600 hover:bg-indigo-500"
             >
-              {showSVGLibrary ? "Masquer la bibliothèque" : "Bibliothèque de pièces"}
+              Bibliothèque
+            </button>
+            <button
+              onClick={handleOpenVisualizer}
+              className="px-3 py-1.5 bg-purple-600 text-white rounded-md hover:bg-purple-500 transition-colors text-sm"
+            >
+              Visualiser
             </button>
           </div>
         </div>
       </header>
 
+      {/* Main content */}
+      <div className="flex-grow flex">
+        {/* Left panel - conditional display */}
+        {showSVGLibrary && (
+          <div className="w-72 p-3 bg-white border-r border-gray-200">
+            <SVGLibraryPanel 
+              onSelectSVG={handleSelectSVGFromLibrary}
+              apiBaseUrl="http://localhost:30001/api"
+            />
+          </div>
+        )}
+
+        {/* Center panel - canvas */}
+        <div className="flex-grow flex flex-col">
+          {/* Canvas */}
+          <div 
+            className="flex-grow bg-white shadow-sm cursor-crosshair overflow-hidden"
+            ref={svgCanvasRef}
+            onMouseMove={handleSvgMouseMove}
+            onMouseUp={handleSvgMouseUp}
+            onMouseLeave={handleSvgMouseUp}
+          >
+            <SvgCanvas
+              shapes={shapes}
+              currentPoints={currentPoints}
+              onCanvasMouseDown={handleCanvasMouseDown}
+              selectedShapeId={selectedShapeId}
+              onShapeClick={handleShapeClick}
+              selectedPointIndex={selectedPointIndex}
+              onVertexMouseDown={handleVertexMouseDown}
+              svgUnitsPerMm={svgUnitsPerMm}
+              isDraggingVertex={!!draggingVertexInfo}
+              snappedPreviewPoint={snappedPreviewPoint}
+              isDrawing={currentPoints.length > 0 && !draggingVertexInfo}
+              onSegmentRightClick={handleSegmentRightClick}
+              displayedAngles={displayedAngles}
+              previewShape={previewShape}
+              onCanvasClick={handleCanvasClick}
+            />
+          </div>
+          
+          {/* Bottom toolbar */}
+          <div className="bg-gray-100 p-2 border-t border-gray-300 flex justify-between items-center">
+            <div className="flex gap-1">
+              {/* Drawing tools */}
+              <div className="bg-white p-1 rounded shadow-sm flex gap-1">
+                <button
+                  onClick={activatePointsMode}
+                  title="Mode Points"
+                  className={`p-1.5 rounded-md ${!drawingToolMode ? "bg-blue-100 text-blue-700" : "text-gray-600 hover:bg-gray-100"}`}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+                  </svg>
+                </button>
+                <button
+                  onClick={() => activateShapeTool("rectangle")}
+                  title="Rectangle"
+                  className={`p-1.5 rounded-md ${drawingToolMode === "rectangle" ? "bg-blue-100 text-blue-700" : "text-gray-600 hover:bg-gray-100"}`}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M5 4a3 3 0 00-3 3v10a3 3 0 003 3h10a3 3 0 003-3V7a3 3 0 00-3-3H5z" clipRule="evenodd" />
+                  </svg>
+                </button>
+                <button
+                  onClick={() => activateShapeTool("square")}
+                  title="Carré"
+                  className={`p-1.5 rounded-md ${drawingToolMode === "square" ? "bg-blue-100 text-blue-700" : "text-gray-600 hover:bg-gray-100"}`}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M5 3a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2V5a2 2 0 00-2-2H5z" />
+                  </svg>
+                </button>
+                <button
+                  onClick={() => activateShapeTool("circle")}
+                  title="Cercle"
+                  className={`p-1.5 rounded-md ${drawingToolMode === "circle" ? "bg-blue-100 text-blue-700" : "text-gray-600 hover:bg-gray-100"}`}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm0-2a6 6 0 100-12 6 6 0 000 12z" clipRule="evenodd" />
+                  </svg>
+                </button>
+              </div>
+              
+              {/* Edit tools */}
+              <div className="bg-white p-1 rounded shadow-sm flex gap-1 ml-2">
+                <button
+                  onClick={finalizeShape}
+                  disabled={currentPoints.length < 2}
+                  title="Terminer la forme"
+                  className={`p-1.5 rounded-md ${currentPoints.length >= 2 ? "text-green-700 hover:bg-gray-100" : "text-gray-400"}`}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                  </svg>
+                </button>
+                <button
+                  onClick={() => setIsOrthogonalMode(!isOrthogonalMode)}
+                  title={isOrthogonalMode ? "Désactiver Mode Ortho" : "Activer Mode Ortho"}
+                  className={`p-1.5 rounded-md ${isOrthogonalMode ? "bg-indigo-100 text-indigo-700" : "text-gray-600 hover:bg-gray-100"}`}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M5 3a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2V5a2 2 0 00-2-2H5zm0 2h5v5H5V5zm0 7h5v3H5v-3zm7 3h3v-3h-3v3zm0-5h3V5h-3v5z" />
+                  </svg>
+                </button>
+                <button
+                  onClick={resetPrincipalShape}
+                  disabled={!hasPrincipalShape && currentPoints.length === 0}
+                  title="Réinitialiser"
+                  className={`p-1.5 rounded-md ${hasPrincipalShape || currentPoints.length > 0 ? "text-red-700 hover:bg-gray-100" : "text-gray-400"}`}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
+                  </svg>
+                </button>
+              </div>
+              
+              {/* Rounding tools - only shown when a vertex is selected */}
+              {canRound && (
+                <div className="bg-white p-1 rounded shadow-sm flex items-center gap-1 ml-2">
+                  <div className="text-xs text-gray-600">Arrondi:</div>
+                  <input
+                    type="number"
+                    value={roundingRadius}
+                    onChange={(e) => setRoundingRadius(Math.max(0, parseInt(e.target.value, 10)))}
+                    className="w-12 p-1 text-xs border border-gray-300 rounded"
+                  />
+                  <button
+                    onClick={handleApplyRounding}
+                    className="p-1.5 rounded-md text-indigo-700 hover:bg-gray-100"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.707l-3-3a1 1 0 00-1.414 0l-3 3a1 1 0 001.414 1.414L9 9.414V13a1 1 0 102 0V9.414l1.293 1.293a1 1 0 001.414-1.414z" clipRule="evenodd" />
+                    </svg>
+                  </button>
+                </div>
+              )}
+            </div>
+            
+            {/* Production tools */}
+            <div className="flex gap-1">
+              {selectedShapeId && (
+                <button
+                  onClick={handleSaveToLibrary}
+                  className="px-2 py-1 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-500 transition-colors"
+                >
+                  Sauvegarder
+                </button>
+              )}
+              <button
+                onClick={exportToSvg}
+                disabled={shapes.length === 0 || isInProduction || hasTooSmallAngles}
+                className={`px-2 py-1 text-sm rounded transition-colors ${shapes.length === 0 || isInProduction || hasTooSmallAngles ? "bg-gray-400 text-gray-200" : "bg-teal-600 text-white hover:bg-teal-500"}`}
+              >
+                {isInProduction ? "EN COURS..." : hasTooSmallAngles ? `Angle < ${MIN_ANGLE_FOR_PRODUCTION}°` : "PRODUCTION"}
+              </button>
+              <button
+                onClick={handleStopProduction}
+                className="px-2 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-500 transition-colors"
+              >
+                STOP
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Modals */}
       {/* Production Tracker Modal */}
       {showProductionTracker && (
         <div className="fixed inset-0 bg-black bg-opacity-75 z-50 flex items-center justify-center p-4">
@@ -1405,7 +1572,7 @@ function App() {
         </div>
       )}
 
-      {/* Modal de sauvegarde SVG */}
+      {/* Save SVG Modal */}
       {showSaveModal && (
         <SaveSVGModal
           isOpen={showSaveModal}
@@ -1415,362 +1582,43 @@ function App() {
         />
       )}
 
-      {/* Conteneur principal pour le canvas et les panneaux latéraux */}
-      <div
-        className="w-full max-w-7xl flex flex-col md:flex-row gap-4 flex-1"
-        style={{ height: "calc(100vh - 150px)" }}
-      >
-        {/* Colonne de gauche : Bibliothèque de pièces SVG */}
-        <div className="md:w-[20%] w-full" style={{ height: "100%" }}>
-          <div className="p-4 border border-indigo-200 bg-white rounded-lg shadow-md flex flex-col h-full gap-4">
-            {showSVGLibrary ? (
-              <SVGLibraryPanel 
-                onSelectSVG={handleSelectSVGFromLibrary}
-                apiBaseUrl="http://localhost:30001/api"
-              />
-            ) : (
-              <>
-                {/* En-tête du panneau */}
-                <div className="p-3 bg-blue-50 rounded-md border border-blue-100">
-                  <h2 className="text-lg font-semibold text-indigo-600 mb-2">
-                    Historique
-                  </h2>
-                  <p className="text-sm text-slate-600">Pièces enregistrées</p>
-                </div>
+      {/* Production Visualizer */}
+      {isPopupOpen && !showProductionVisualizer && (
+        <PieceCreationVisualizer
+          etapes={etapes}
+          onClose={() => setIsPopupOpen(false)}
+        />
+      )}
 
-                {/* Contenu à remplir plus tard */}
-                <div className="flex-grow bg-gray-50 rounded-md p-2 border border-gray-100">
-                  {/* Emplacement futur pour l'historique des pièces SVG */}
-                  <p className="text-sm text-gray-400 italic text-center mt-4">
-                    L'historique des pièces sera affiché ici
-                  </p>
-                </div>
-              </>
-            )}
+      {showProductionVisualizer && productionSequence && (
+        <PieceCreationVisualizer
+          etapes={productionSequence}
+          onClose={() => {
+            setShowProductionVisualizer(false);
+          }}
+        />
+      )}
+
+      {/* Loading and error states */}
+      {isLoading && (
+        <div className="fixed inset-0 bg-black bg-opacity-20 flex items-center justify-center">
+          <div className="bg-white p-4 rounded-lg shadow-lg">
+            <p className="text-blue-600">Chargement des étapes...</p>
           </div>
         </div>
+      )}
 
-        {/* Colonne centrale : Canevas SVG */}
-        <div
-          className="md:w-[60%] w-full bg-white shadow-md cursor-crosshair rounded-lg border border-indigo-200 overflow-hidden"
-          style={{ height: "100%" }}
-          ref={svgCanvasRef}
-          onMouseMove={handleSvgMouseMove}
-          onMouseUp={handleSvgMouseUp}
-          onMouseLeave={handleSvgMouseUp}
-        >
-          <SvgCanvas
-            shapes={shapes}
-            currentPoints={currentPoints}
-            onCanvasMouseDown={handleCanvasMouseDown}
-            selectedShapeId={selectedShapeId}
-            onShapeClick={handleShapeClick}
-            selectedPointIndex={selectedPointIndex}
-            onVertexMouseDown={handleVertexMouseDown}
-            svgUnitsPerMm={svgUnitsPerMm}
-            isDraggingVertex={!!draggingVertexInfo}
-            snappedPreviewPoint={snappedPreviewPoint}
-            isDrawing={currentPoints.length > 0 && !draggingVertexInfo}
-            onSegmentRightClick={handleSegmentRightClick}
-            displayedAngles={displayedAngles}
-            previewShape={previewShape}
-            onCanvasClick={handleCanvasClick}
-          />
-        </div>
-
-        {/* Colonne de droite : Panneau de contrôle unique */}
-        <div className="md:w-[20%] w-full" style={{ height: "100%" }}>
-          {/* Panneau de contrôle unique regroupant tout */}
-          <div className="p-4 border border-indigo-200 bg-white rounded-lg shadow-md flex flex-col h-full gap-4">
-            {/* Section Actions Pièce */}
-            <div className="p-3 bg-blue-50 rounded-md border border-blue-100">
-              <h2 className="text-lg font-semibold text-indigo-600 mb-2">
-                Actions Pièce
-              </h2>
-              <div className="flex flex-wrap gap-2 mb-2">
-                <button
-                  onClick={resetPrincipalShape}
-                  disabled={!hasPrincipalShape && currentPoints.length === 0}
-                  className="px-3 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 disabled:bg-gray-200 disabled:text-gray-400 transition-colors duration-150 shadow-sm flex items-center gap-1"
-                  title="Réinitialiser"
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="h-5 w-5"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                  <span>Réinitialiser</span>
-                </button>
-                {(hasPrincipalShape || currentPoints.length > 0) && (
-                  <button
-                    onClick={finalizeShape}
-                    disabled={currentPoints.length < 2}
-                    className="px-3 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 disabled:bg-gray-200 disabled:text-gray-400 transition-colors duration-150 shadow-sm flex items-center gap-1"
-                    title="Terminer la forme"
-                  >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      className="h-5 w-5"
-                      viewBox="0 0 20 20"
-                      fill="currentColor"
-                    >
-                      <path
-                        fillRule="evenodd"
-                        d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                    <span>Terminer</span>
-                  </button>
-                )}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={activatePointsMode}
-                  title="Mode Points (dessiner librement)"
-                  className={`px-3 py-2 text-white rounded-md hover:bg-blue-600 transition-colors duration-150 shadow-sm flex items-center gap-1 ${
-                    !drawingToolMode
-                      ? "bg-blue-700 ring-2 ring-blue-300"
-                      : "bg-blue-500"
-                  }`}
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="h-5 w-5"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                  >
-                    <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
-                  </svg>
-                  <span>Points</span>
-                </button>
-                <button
-                  onClick={() => activateShapeTool("rectangle")}
-                  title="Dessiner Rectangle"
-                  className={`px-3 py-2 text-white rounded-md hover:bg-blue-600 transition-colors duration-150 shadow-sm flex items-center gap-1 ${
-                    drawingToolMode === "rectangle"
-                      ? "bg-blue-700 ring-2 ring-blue-300"
-                      : "bg-blue-500"
-                  }`}
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="h-5 w-5"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M5 4a3 3 0 00-3 3v10a3 3 0 003 3h10a3 3 0 003-3V7a3 3 0 00-3-3H5zm0 2a1 1 0 00-1 1v10a1 1 0 001 1h10a1 1 0 001-1V7a1 1 0 00-1-1H5z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                  <span>Rectangle</span>
-                </button>
-                <button
-                  onClick={() => activateShapeTool("square")}
-                  title="Dessiner Carré"
-                  className={`px-3 py-2 text-white rounded-md hover:bg-blue-600 transition-colors duration-150 shadow-sm flex items-center gap-1 ${
-                    drawingToolMode === "square"
-                      ? "bg-blue-700 ring-2 ring-blue-300"
-                      : "bg-blue-500"
-                  }`}
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="h-5 w-5"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                  >
-                    <path d="M5 3a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2V5a2 2 0 00-2-2H5z" />
-                  </svg>
-                  <span>Carré</span>
-                </button>
-                <button
-                  onClick={() => activateShapeTool("circle")}
-                  title="Dessiner Cercle"
-                  className={`px-3 py-2 text-white rounded-md hover:bg-blue-600 transition-colors duration-150 shadow-sm flex items-center gap-1 ${
-                    drawingToolMode === "circle"
-                      ? "bg-blue-700 ring-2 ring-blue-300"
-                      : "bg-blue-500"
-                  }`}
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="h-5 w-5"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M10 18a8 8 0 100-16 8 8 0 000 16zm0-2a6 6 0 100-12 6 6 0 000 12z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                  <span>Cercle</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Section Outils et Options (sans export) */}
-            <div className="p-3 bg-blue-50 rounded-md border border-blue-100">
-              <h2 className="text-lg font-semibold text-indigo-600 mb-3">
-                Outils & Options
-              </h2>
-              <div className="flex flex-wrap gap-2 items-center">
-                <button
-                  onClick={() => setIsOrthogonalMode(!isOrthogonalMode)}
-                  className={`px-4 py-2 rounded-md transition-colors duration-150 shadow-sm ${
-                    isOrthogonalMode
-                      ? "bg-indigo-500 text-white"
-                      : "bg-blue-100 text-indigo-600 hover:bg-blue-200"
-                  }`}
-                  title={
-                    isOrthogonalMode
-                      ? "Désactiver Mode Ortho"
-                      : "Activer Mode Ortho"
-                  }
-                >
-                  Mode Ortho: {isOrthogonalMode ? "ON" : "OFF"}
-                </button>
-                {/* Contrôle de l'arrondi - redesign */}
-                {selectedShapeId && selectedPointIndex !== null && canRound && (
-                  <div className="bg-blue-100 rounded-md border border-blue-200 p-3">
-                    <div className="flex flex-col gap-2">
-                      <div className="flex items-center justify-between">
-                        <label
-                          htmlFor="roundingRadius"
-                          className="text-sm font-medium text-indigo-700"
-                        >
-                          Rayon Arrondi:
-                        </label>
-                        <input
-                          type="number"
-                          id="roundingRadius"
-                          value={roundingRadius}
-                          onChange={(e) =>
-                            setRoundingRadius(
-                              Math.max(0, parseInt(e.target.value, 10))
-                            )
-                          }
-                          className="w-24 p-2 rounded bg-white text-slate-700 border border-blue-300 focus:ring-indigo-500 focus:border-indigo-500 text-right"
-                        />
-                      </div>
-                      <button
-                        onClick={handleApplyRounding}
-                        className="w-full py-2 mt-1 bg-indigo-500 text-white rounded-md hover:bg-indigo-600 disabled:bg-gray-300 transition-colors duration-150 shadow-sm font-medium"
-                      >
-                        Arrondir Point
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Bouton Exporter SVG poussé en bas */}
-            <div className="mt-auto p-3 bg-blue-50 rounded-md border border-blue-100 flex flex-col gap-2">
-              <button
-                onClick={handleOpenVisualizer}
-                className="px-4 py-2 bg-purple-500 text-white rounded-md hover:bg-purple-600 transition-colors duration-150 shadow-sm"
-              >
-                Visualiser la création
-              </button>
-              <button
-                onClick={handleSaveToLibrary}
-                disabled={shapes.length === 0 || !selectedShapeId}
-                className="px-4 py-2 bg-indigo-500 text-white rounded-md hover:bg-indigo-600 disabled:bg-gray-400 disabled:text-gray-500 disabled:cursor-not-allowed transition-colors duration-150 shadow-sm"
-              >
-                Sauvegarder dans la bibliothèque
-              </button>
-              <button
-                onClick={exportToSvg}
-                disabled={
-                  shapes.length === 0 || isInProduction || hasTooSmallAngles
-                }
-                className="w-full px-4 py-2 bg-teal-500 text-white rounded-md hover:bg-teal-600 disabled:bg-gray-400 disabled:text-gray-500 disabled:cursor-not-allowed transition-colors duration-150 shadow-sm"
-              >
-                {isInProduction
-                  ? "PRODUCTION EN COURS..."
-                  : hasTooSmallAngles
-                  ? `Angle(s) < ${MIN_ANGLE_FOR_PRODUCTION}°!`
-                  : "PRODUCTION"}
-              </button>
-              <button
-                onClick={handleStopProduction}
-                className="w-full px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors duration-150 shadow-sm"
-              >
-                STOP
-              </button>
-            </div>
+      {error && (
+        <div className="fixed inset-0 bg-black bg-opacity-20 flex items-center justify-center">
+          <div className="bg-white p-4 rounded-lg shadow-lg">
+            <p className="text-red-600">Erreur : {error}</p>
           </div>
         </div>
-        <>
-          {isPopupOpen && !showProductionVisualizer && (
-            <PieceCreationVisualizer
-              etapes={etapes}
-              onClose={() => setIsPopupOpen(false)}
-            />
-          )}
-
-          {showProductionVisualizer && productionSequence && (
-            <PieceCreationVisualizer
-              etapes={productionSequence}
-              onClose={() => {
-                setShowProductionVisualizer(false);
-              }}
-            />
-          )}
-
-          {showProductionTracker && (
-            <div className="fixed inset-0 bg-black bg-opacity-75 z-50 flex items-center justify-center p-4">
-              <div className="w-full max-w-6xl max-h-[90vh] flex flex-col bg-white rounded-lg shadow-xl overflow-hidden">
-                <div className="flex-grow overflow-auto">
-                  <ProductionTracker apiBaseUrl="http://localhost:30001/api" />
-                </div>
-                <div className="p-4 bg-gray-100 border-t flex justify-end">
-                  <button
-                    onClick={() => setShowProductionTracker(false)}
-                    className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 transition-colors"
-                  >
-                    Fermer
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {isLoading && (
-            <p className="text-center mt-4 text-blue-600">
-              Chargement des étapes...
-            </p>
-          )}
-
-          {error && (
-            <p className="text-center mt-4 text-red-600">Erreur : {error}</p>
-          )}
-        </>
-      </div>
-
-      <footer className="w-full max-w-5xl mt-3 mb-2 text-center">
-        <p className="text-xs text-indigo-300">
-          By{" "}
-          <a
-            href="https://glowsoft.fr"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-indigo-200 transition-colors"
-          >
-            Glowsoft
-          </a>
-        </p>
+      )}
+      
+      {/* Footer - simplified */}
+      <footer className="py-2 text-center text-xs text-gray-400">
+        <span>Atelier des Composites © {new Date().getFullYear()}</span>
       </footer>
     </div>
   );
