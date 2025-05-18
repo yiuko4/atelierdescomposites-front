@@ -94,6 +94,7 @@ function App() {
   const [selectedShapeId, setSelectedShapeId] = useState(null);
   const [selectedPointIndex, setSelectedPointIndex] = useState(null);
   const [roundingRadius, setRoundingRadius] = useState(5);
+  const [numSegmentsForCornerRounding, setNumSegmentsForCornerRounding] = useState(4); // Nouvel état
   const [svgUnitsPerMm, setSvgUnitsPerMm] = useState(6);
   const [draggingVertexInfo, setDraggingVertexInfo] = useState(null);
   const [isOrthogonalMode, setIsOrthogonalMode] = useState(false);
@@ -1067,7 +1068,7 @@ function App() {
     let startAngleArc = V.angle(V.subtract(T_A, C));
     let endAngleArc = V.angle(V.subtract(T_B, C));
 
-    const NUM_ARC_SEGMENTS = 10;
+    const NUM_ARC_SEGMENTS = Math.max(1, numSegmentsForCornerRounding); // Utiliser le nouvel état, s'assurer qu'il est au moins 1
     const arcPoints = [];
 
     if (cross_product_val > 0) {
@@ -1808,12 +1809,24 @@ function App() {
                 {canRound && (
                   <div className="pt-2 border-t border-gray-200 mt-2">
                     <label htmlFor="roundingRadiusInput" className="text-sm text-gray-700 block mb-1">Rayon d'arrondi:</label>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 mb-2">
                       <input
                         id="roundingRadiusInput"
                         type="number"
                         value={roundingRadius}
                         onChange={(e) => setRoundingRadius(Math.max(0, parseInt(e.target.value, 10)))}
+                        className="w-full p-1.5 text-sm border border-gray-300 rounded"
+                      />
+                      {/* Le bouton Appliquer est déplacé plus bas pour s'appliquer aux deux inputs */}
+                    </div>
+
+                    <label htmlFor="numSegmentsRoundingInput" className="text-sm text-gray-700 block mb-1">Segments pour arrondi:</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        id="numSegmentsRoundingInput"
+                        type="number"
+                        value={numSegmentsForCornerRounding}
+                        onChange={(e) => setNumSegmentsForCornerRounding(Math.max(1, parseInt(e.target.value, 10)))} // Min 1 segment
                         className="w-full p-1.5 text-sm border border-gray-300 rounded"
                       />
                       <button
