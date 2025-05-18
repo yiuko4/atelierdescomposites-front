@@ -109,9 +109,6 @@ function App() {
   const [isUndoRedoAction, setIsUndoRedoAction] = useState(false); // Flag pour éviter d'ajouter les actions d'annulation/rétablissement elles-mêmes à l'historique
   const [displayedAngles, setDisplayedAngles] = useState([]);
   const [hasTooSmallAngles, setHasTooSmallAngles] = useState(false); // Nouvel état pour les angles trop petits
-  const [productionSequence, setProductionSequence] = useState(null); // Pour stocker les étapes de production
-  const [showProductionVisualizer, setShowProductionVisualizer] =
-    useState(false); // Pour ouvrir le visualiseur avec les étapes de prod
 
   const [activeProductionJobId, setActiveProductionJobId] = useState(null); // Nouvel état pour la tâche active
 
@@ -1034,18 +1031,6 @@ function App() {
     }
   };
 
-  const handleOpenVisualizer = () => {
-    // Priorité aux données de production si elles existent et ne sont pas vides
-    if (productionSequence && productionSequence.length > 0) {
-      setShowProductionVisualizer(true); // Ouvre le visualiseur avec les données de production
-      setIsPopupOpen(false); // S'assure que l'autre condition de rendu pour le visualiseur est fausse
-    } else {
-      // Sinon, utilise les étapes par défaut (etape-test.json)
-      setIsPopupOpen((prev) => !prev); // Bascule l'état pour le visualiseur par défaut
-      setShowProductionVisualizer(false); // S'assure que la condition pour le visualiseur de prod est fausse
-    }
-  };
-
   const calculatePathLength = (points, isPolygon) => {
     if (!points || points.length < 2) return 0;
     let lengthInSvgUnits = 0;
@@ -1157,10 +1142,18 @@ function App() {
 
   // --- Fonctions pour ajouter des formes prédéfinies ---
   const addPredefinedShape = (newPoints, shapeType = "polygon") => {
+    const hasExistingPrincipalShape = shapes.some(s => s.type === 'polygon' || s.type === 'polyline');
+
+    if (hasExistingPrincipalShape) {
+      if (!window.confirm("Une forme principale existe déjà. Voulez-vous la remplacer par cette nouvelle forme ?")) {
+        return; // User cancelled
+      }
+    }
+
     if (!isUndoRedoAction) {
       addToHistory({
         type: "shapes",
-        shapes: JSON.parse(JSON.stringify(shapes)),
+        shapes: JSON.parse(JSON.stringify(shapes)), // Capture state before replacement
       });
     }
 
@@ -1173,12 +1166,14 @@ function App() {
       strokeWidth: 2,
     };
 
-    // Conserver les formes qui ne sont ni des polygones ni des polylignes (ex: les "rect" d'exemple)
-    const otherShapes = shapes.filter(
-      (s) => s.type !== "polygon" && s.type !== "polyline"
-    );
+    setShapesAndPersist(prevShapes => {
+      // Filter out any existing polygons or polylines from prevShapes
+      const nonPrincipalShapes = prevShapes.filter(
+        (s) => s.type !== "polygon" && s.type !== "polyline"
+      );
+      return [...nonPrincipalShapes, newShape]; // Add the new shape, replacing old principal ones
+    });
 
-    setShapesAndPersist(prevShapes => [...prevShapes, newShape]);
     setSelectedShapeId(newShape.id);
     resetDrawingState(); // Efface currentPoints etc.
     setSelectedPointIndex(null);
@@ -1299,6 +1294,13 @@ function App() {
   
   // Fonction pour charger une forme depuis la bibliothèque
   const handleSelectSVGFromLibrary = (piece) => {
+    const existingPrincipalShape = shapes.find(s => s.type === 'polygon' || s.type === 'polyline');
+    if (existingPrincipalShape) {
+      if (!window.confirm("Une forme principale existe déjà. Voulez-vous la remplacer par la pièce de la bibliothèque ?")) {
+        return; // User cancelled
+      }
+    }
+
     try {
       // Parse SVG content
       const parser = new DOMParser();
@@ -1319,19 +1321,30 @@ function App() {
       
       // Create a new shape from the SVG
       const newShape = {
-        id: Date.now().toString(),
+        id: `shape-lib-${Date.now().toString()}`, // Ensure unique ID
         type: "polygon",
         points: points,
-        fill: "rgba(0, 120, 255, 0.1)",
+        fill: "rgba(0, 120, 255, 0.1)", // Distinct fill for library items might be nice
+        stroke: "black",
+        strokeWidth: 2,
       };
       
       // Add the shape and select it
-      addToHistory({
+      addToHistory({ // Capture state before replacement
         type: "shapes",
         shapes: JSON.parse(JSON.stringify(shapes))
       });
-      setShapesAndPersist([...shapes, newShape]);
+
+      setShapesAndPersist(prevShapes => {
+        const nonPrincipalShapes = prevShapes.filter(
+          (s) => s.type !== "polygon" && s.type !== "polyline"
+        );
+        return [...nonPrincipalShapes, newShape]; // Replace principal shapes
+      });
       setSelectedShapeId(newShape.id);
+      setCurrentPoints([]); // Clear any ongoing drawing
+      setDrawingToolMode(null); // Deactivate any drawing tool
+      setPreviewShape(null);
       
       // Display success message
       alert(`La pièce "${piece.name}" a été chargée avec succès.`);
@@ -1367,12 +1380,6 @@ function App() {
               className="px-3 py-1.5 rounded-md transition-colors text-sm bg-indigo-600 hover:bg-indigo-500"
             >
               Bibliothèque
-            </button>
-            <button
-              onClick={handleOpenVisualizer}
-              className="px-3 py-1.5 bg-purple-600 text-white rounded-md hover:bg-purple-500 transition-colors text-sm"
-            >
-              Visualiser
             </button>
           </div>
         </div>
@@ -1561,23 +1568,6 @@ function App() {
           onClose={() => setShowSaveModal(false)}
           svgContent={generateSvgContent()}
           onSaveSuccess={handleSaveSuccess}
-        />
-      )}
-
-      {/* Production Visualizer */}
-      {isPopupOpen && !showProductionVisualizer && (
-        <PieceCreationVisualizer
-          etapes={etapes}
-          onClose={() => setIsPopupOpen(false)}
-        />
-      )}
-
-      {showProductionVisualizer && productionSequence && (
-        <PieceCreationVisualizer
-          etapes={productionSequence}
-          onClose={() => {
-            setShowProductionVisualizer(false);
-          }}
         />
       )}
 
