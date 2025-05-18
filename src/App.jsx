@@ -136,6 +136,36 @@ function App() {
   const vertexPressTimer = useRef(null); // Pour le délai du clic maintenu
   const vertexMouseDownInfo = useRef(null); // { shapeId, pointIndex, clientX, clientY }
 
+  const ZOOM_FACTOR = 1.2; // Facteur de zoom
+
+  const handleZoom = useCallback((direction) => {
+    setViewBoxCoords(prev => {
+      const currentWidth = prev.width;
+      const currentHeight = prev.height;
+      const currentX = prev.x;
+      const currentY = prev.y;
+
+      let newWidth, newHeight;
+
+      if (direction === 'in') {
+        newWidth = currentWidth / ZOOM_FACTOR;
+        newHeight = currentHeight / ZOOM_FACTOR;
+      } else { // 'out'
+        newWidth = currentWidth * ZOOM_FACTOR;
+        newHeight = currentHeight * ZOOM_FACTOR;
+      }
+
+      // Calculer le centre actuel pour zoomer par rapport au centre
+      const centerX = currentX + currentWidth / 2;
+      const centerY = currentY + currentHeight / 2;
+
+      const newX = centerX - newWidth / 2;
+      const newY = centerY - newHeight / 2;
+
+      return { x: newX, y: newY, width: newWidth, height: newHeight };
+    });
+  }, []); // Pas de dépendances spécifiques nécessaires ici si ZOOM_FACTOR est constant
+
   const SEGMENT_CLICK_THRESHOLD = 10; // En unités SVG
 
   // Fonction d'ancrage à la grille
@@ -1639,6 +1669,28 @@ function App() {
                 {/* Icône Main */}
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 017.044 8.39l-1.847 1.846a.5.5 0 01-.708 0L12.5 12.75V16.5a.5.5 0 01-1 0V9.5a.5.5 0 01.5-.5h7a.5.5 0 010 1H12V8.5A5.5 5.5 0 019 3.5zM5.5 6A1.5 1.5 0 004 7.5V11H1.5a.5.5 0 000 1H4v3.5A1.5 1.5 0 005.5 17h4a1.5 1.5 0 001.5-1.5V13h2.5a.5.5 0 000-1H11V8.5A1.5 1.5 0 009.5 7h-4A1.5 1.5 0 004 7.5V6h1.5zm0-3A1.5 1.5 0 004 4.5V5h1.5V3zM7 1.5a.5.5 0 00-1 0V3h1.5a1.5 1.5 0 000-3H7zM3 5.5A1.5 1.5 0 014.5 4H6V3H4.5a.5.5 0 000 1H3v1.5z" clipRule="evenodd" /></svg>
                 Panoramique
+              </button>
+              <button
+                onClick={() => handleZoom('in')}
+                title="Zoomer"
+                className="p-2 rounded-md text-sm flex items-center gap-2 text-gray-700 hover:bg-gray-100"
+              >
+                {/* Icône Zoom In */}
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8zm5-1h2a1 1 0 110 2H7a1 1 0 110-2z" clipRule="evenodd" />
+                </svg>
+                Zoomer
+              </button>
+              <button
+                onClick={() => handleZoom('out')}
+                title="Dézoomer"
+                className="p-2 rounded-md text-sm flex items-center gap-2 text-gray-700 hover:bg-gray-100"
+              >
+                {/* Icône Zoom Out */}
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8zm3-1a1 1 0 011-1h4a1 1 0 110 2H6a1 1 0 01-1-1z" clipRule="evenodd" />
+                </svg>
+                Dézoomer
               </button>
             </div>
           </div>
