@@ -234,9 +234,15 @@ function SvgCanvas({
                   e.preventDefault();
                   if (onSegmentRightClick && svgRef.current) {
                     const svgRect = svgRef.current.getBoundingClientRect();
-                    const x = e.clientX - svgRect.left;
-                    const y = e.clientY - svgRect.top;
-                    onSegmentRightClick(shape.id, { x, y });
+                    const [vx, vy] = viewBoxString.split(" ").map(Number); // Get vx, vy from viewBox
+                    const clientXInSvg = e.clientX - svgRect.left;
+                    const clientYInSvg = e.clientY - svgRect.top;
+                    
+                    // Convert to SVG world coordinates
+                    const svgX = clientXInSvg + vx;
+                    const svgY = clientYInSvg + vy;
+                    
+                    onSegmentRightClick(shape.id, { x: svgX, y: svgY });
                   }
                 }}
               />
@@ -253,9 +259,15 @@ function SvgCanvas({
                   e.preventDefault();
                   if (onSegmentRightClick && svgRef.current) {
                     const svgRect = svgRef.current.getBoundingClientRect();
-                    const x = e.clientX - svgRect.left;
-                    const y = e.clientY - svgRect.top;
-                    onSegmentRightClick(shape.id, { x, y });
+                    const [vx, vy] = viewBoxString.split(" ").map(Number); // Get vx, vy from viewBox
+                    const clientXInSvg = e.clientX - svgRect.left;
+                    const clientYInSvg = e.clientY - svgRect.top;
+
+                    // Convert to SVG world coordinates
+                    const svgX = clientXInSvg + vx;
+                    const svgY = clientYInSvg + vy;
+
+                    onSegmentRightClick(shape.id, { x: svgX, y: svgY });
                   }
                 }}
               />
@@ -282,9 +294,15 @@ function SvgCanvas({
                     e.preventDefault();
                     if (onSegmentRightClick && svgRef.current) {
                       const svgRect = svgRef.current.getBoundingClientRect();
-                      const x = e.clientX - svgRect.left;
-                      const y = e.clientY - svgRect.top;
-                      onSegmentRightClick(shape.id, { x, y });
+                      const [vx, vy] = viewBoxString.split(" ").map(Number); // Get vx, vy from viewBox
+                      const clientXInSvg = e.clientX - svgRect.left;
+                      const clientYInSvg = e.clientY - svgRect.top;
+                      
+                      // Convert to SVG world coordinates
+                      const svgX = clientXInSvg + vx;
+                      const svgY = clientYInSvg + vy;
+                      
+                      onSegmentRightClick(shape.id, { x: svgX, y: svgY });
                     }
                   }}
                 />
@@ -301,9 +319,15 @@ function SvgCanvas({
                     e.preventDefault();
                     if (onSegmentRightClick && svgRef.current) {
                       const svgRect = svgRef.current.getBoundingClientRect();
-                      const x = e.clientX - svgRect.left;
-                      const y = e.clientY - svgRect.top;
-                      onSegmentRightClick(shape.id, { x, y });
+                      const [vx, vy] = viewBoxString.split(" ").map(Number); // Get vx, vy from viewBox
+                      const clientXInSvg = e.clientX - svgRect.left;
+                      const clientYInSvg = e.clientY - svgRect.top;
+
+                      // Convert to SVG world coordinates
+                      const svgX = clientXInSvg + vx;
+                      const svgY = clientYInSvg + vy;
+
+                      onSegmentRightClick(shape.id, { x: svgX, y: svgY });
                     }
                   }}
                 />

@@ -1741,69 +1741,96 @@ function App() {
             </div>
           </div>
           
-          {/* Section: Édition de Forme */}
-          <div>
-            <h4 className="text-sm font-semibold uppercase text-gray-600 mb-2">Édition</h4>
-            <div className="bg-white p-2 rounded shadow-sm flex flex-col gap-2">
-              <button
-                onClick={finalizeShape}
-                disabled={currentPoints.length < 2}
-                title="Terminer la forme actuelle"
-                className={`p-2 rounded-md text-sm flex items-center gap-2 ${currentPoints.length >= 2 ? "text-green-700 hover:bg-green-50" : "text-gray-400"}`}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                </svg>
-                Terminer Forme
-              </button>
-              <button
-                onClick={() => setIsOrthogonalMode(!isOrthogonalMode)}
-                title={isOrthogonalMode ? "Désactiver Mode Orthogonal" : "Activer Mode Orthogonal"}
-                className={`p-2 rounded-md text-sm flex items-center gap-2 ${isOrthogonalMode ? "bg-indigo-100 text-indigo-700" : "text-gray-700 hover:bg-gray-100"}`}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                  <path d="M5 3a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2V5a2 2 0 00-2-2H5zm0 2h5v5H5V5zm0 7h5v3H5v-3zm7 3h3v-3h-3v3zm0-5h3V5h-3v5z" />
-                </svg>
-                Mode Orthogonal
-              </button>
-              <button
-                onClick={resetPrincipalShape}
-                disabled={!hasPrincipalShape && currentPoints.length === 0}
-                title="Réinitialiser la forme principale"
-                className={`p-2 rounded-md text-sm flex items-center gap-2 ${hasPrincipalShape || currentPoints.length > 0 ? "text-red-700 hover:bg-red-50" : "text-gray-400"}`}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
-                </svg>
-                Réinitialiser Forme
-              </button>
-              
-              {/* Rounding tools - only shown when a vertex is selected */}
-              {canRound && (
-                <div className="pt-2 border-t border-gray-200 mt-2">
-                  <label htmlFor="roundingRadiusInput" className="text-sm text-gray-700 block mb-1">Rayon d'arrondi:</label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      id="roundingRadiusInput"
-                      type="number"
-                      value={roundingRadius}
-                      onChange={(e) => setRoundingRadius(Math.max(0, parseInt(e.target.value, 10)))}
-                      className="w-full p-1.5 text-sm border border-gray-300 rounded"
-                    />
+          {/* Section: Édition (Ancienne section, renommée ou ajustée) */}
+          {/* Potentiellement renommer en "Actions de Dessin" si seulement "Terminer Forme" reste */}
+          {(currentPoints.length >= 2 || isOrthogonalMode) && ( // Afficher la section si on peut terminer une forme OU si le mode ortho est pertinent
+            <div>
+              <h4 className="text-sm font-semibold uppercase text-gray-600 mb-2">Actions Dessin & Édition</h4>
+              <div className="bg-white p-2 rounded shadow-sm flex flex-col gap-2">
+                {currentPoints.length >=2 && (
                     <button
-                      onClick={handleApplyRounding}
-                      title="Appliquer l'arrondi au sommet sélectionné"
-                      className="p-1.5 rounded-md text-indigo-700 hover:bg-indigo-50 flex-shrink-0"
+                    onClick={finalizeShape}
+                    disabled={currentPoints.length < 2} // Redondant mais clair
+                    title="Terminer la forme actuelle"
+                    className={`p-2 rounded-md text-sm flex items-center gap-2 text-green-700 hover:bg-green-50`}
                     >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.707l-3-3a1 1 0 00-1.414 0l-3 3a1 1 0 001.414 1.414L9 9.414V13a1 1 0 102 0V9.414l1.293 1.293a1 1 0 001.414-1.414z" clipRule="evenodd" />
-                      </svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                    Terminer Forme
                     </button>
-                  </div>
-                </div>
-              )}
+                )}
+                {/* Le mode orthogonal est déplacé dans la section d'édition de forme sélectionnée */}
+              </div>
             </div>
-          </div>
+          )}
+
+          {/* Section: Édition de la Forme Sélectionnée - Conditionnellement affichée */}
+          {selectedShape && (selectedShape.type === 'polygon' || selectedShape.type === 'polyline') && (
+            <div>
+              <h4 className="text-sm font-semibold uppercase text-gray-600 mb-2">Édition de la Forme Sélectionnée</h4>
+              <div className="bg-white p-2 rounded shadow-sm flex flex-col gap-2">
+                <button
+                  onClick={() => alert("Clic-droit sur un segment pour ajouter un sommet.")}
+                  title="Ajouter un sommet à la forme (Utiliser Clic-Droit sur segment)"
+                  className={`p-2 rounded-md text-sm flex items-center gap-2 text-gray-700 hover:bg-gray-100`}
+                >
+                  {/* Icône pour ajouter un sommet (exemple) */}
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M10 3a1 1 0 011 1v4h4a1 1 0 110 2h-4v4a1 1 0 11-2 0v-4H5a1 1 0 110-2h4V4a1 1 0 011-1z" />
+                  </svg>
+                  Ajouter Sommet (Clic-Droit)
+                </button>
+
+                <button
+                  onClick={() => setIsOrthogonalMode(!isOrthogonalMode)}
+                  title={isOrthogonalMode ? "Désactiver Mode Orthogonal" : "Activer Mode Orthogonal (pour dessin)"}
+                  className={`p-2 rounded-md text-sm flex items-center gap-2 ${isOrthogonalMode ? "bg-indigo-100 text-indigo-700" : "text-gray-700 hover:bg-gray-100"}`}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M5 3a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2V5a2 2 0 00-2-2H5zm0 2h5v5H5V5zm0 7h5v3H5v-3zm7 3h3v-3h-3v3zm0-5h3V5h-3v5z" />
+                  </svg>
+                  Mode Orthogonal
+                </button>
+                
+                <button
+                  onClick={resetPrincipalShape} // Ce bouton supprime la forme actuelle
+                  title="Supprimer la forme principale"
+                  className={`p-2 rounded-md text-sm flex items-center gap-2 text-red-700 hover:bg-red-50`}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                  Supprimer Forme
+                </button>
+
+                {/* Rounding tools - only shown when a vertex is selected and shape is polyline/polygon */}
+                {canRound && (
+                  <div className="pt-2 border-t border-gray-200 mt-2">
+                    <label htmlFor="roundingRadiusInput" className="text-sm text-gray-700 block mb-1">Rayon d'arrondi:</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        id="roundingRadiusInput"
+                        type="number"
+                        value={roundingRadius}
+                        onChange={(e) => setRoundingRadius(Math.max(0, parseInt(e.target.value, 10)))}
+                        className="w-full p-1.5 text-sm border border-gray-300 rounded"
+                      />
+                      <button
+                        onClick={handleApplyRounding}
+                        title="Appliquer l'arrondi au sommet sélectionné"
+                        className="p-1.5 rounded-md text-indigo-700 hover:bg-indigo-50 flex-shrink-0"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.707l-3-3a1 1 0 00-1.414 0l-3 3a1 1 0 001.414 1.414L9 9.414V13a1 1 0 102 0V9.414l1.293 1.293a1 1 0 001.414-1.414z" clipRule="evenodd" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Section: Production */}
           <div>
