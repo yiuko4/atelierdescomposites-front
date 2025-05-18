@@ -1,4 +1,5 @@
-import React, { useRef } from "react";
+import React, { useRef, useState, useEffect } from "react";
+import PropTypes from "prop-types";
 
 // Réutiliser les fonctions vectorielles de App.jsx si nécessaire pour les calculs
 // Pour simplifier ici, on va juste passer les props nécessaires ou recalculer basiquement.
@@ -32,6 +33,12 @@ function SvgCanvas({
   onSegmentRightClick,
   displayedAngles,
   previewShape,
+  showGrid = false,
+  gridSpacing = 20,
+  minAngleForProduction = 65,
+  showAxes = true,
+  showOriginMarker = true,
+  viewBoxString = "0 0 800 600",
 }) {
   const currentPathPoints = currentPoints.map((p) => `${p.x},${p.y}`).join(" ");
   const svgRef = useRef(null);
@@ -74,17 +81,94 @@ function SvgCanvas({
     pointerEvents: "none", // Important pour ne pas interférer avec les autres événements souris
   };
 
+  const getPathData = (points, type) => {
+    // Implementation of getPathData function
+  };
+
+  // Fonction pour générer les lignes de la grille
+  const renderGridLines = () => {
+    if (!showGrid || gridSpacing <= 0) return null;
+
+    const [vx, vy, vWidth, vHeight] = viewBoxString.split(" ").map(Number);
+
+    const lines = [];
+
+    // Lignes verticales de la grille
+    for (let x = Math.floor(vx / gridSpacing) * gridSpacing; x < vx + vWidth; x += gridSpacing) {
+      if (x === 0 && showAxes) continue; // Ne pas redessiner l'axe Y si showAxes est vrai
+      lines.push(
+        <line
+          key={`grid-v-${x}`}
+          x1={x}
+          y1={vy}
+          x2={x}
+          y2={vy + vHeight}
+          stroke="#e0e0e0"
+          strokeWidth="0.5"
+        />
+      );
+    }
+    // Lignes horizontales de la grille
+    for (let y = Math.floor(vy / gridSpacing) * gridSpacing; y < vy + vHeight; y += gridSpacing) {
+      if (y === 0 && showAxes) continue; // Ne pas redessiner l'axe X si showAxes est vrai
+      lines.push(
+        <line
+          key={`grid-h-${y}`}
+          x1={vx}
+          y1={y}
+          x2={vx + vWidth}
+          y2={y}
+          stroke="#e0e0e0"
+          strokeWidth="0.5"
+        />
+      );
+    }
+    return lines;
+  };
+
+  const renderAxes = () => {
+    if (!showAxes) return null;
+    const [vx, vy, vWidth, vHeight] = viewBoxString.split(" ").map(Number);
+    const axisStyle = { stroke: "#888888", strokeWidth: 1 }; // Style pour les axes
+
+    return (
+      <g>
+        {/* Axe X */}
+        <line x1={vx} y1={0} x2={vx + vWidth} y2={0} {...axisStyle} />
+        {/* Axe Y */}
+        <line x1={0} y1={vy} x2={0} y2={vy + vHeight} {...axisStyle} />
+      </g>
+    );
+  };
+
+  const renderOriginMarker = () => {
+    if (!showOriginMarker) return null;
+    const originMarkerStyle = { fill: "#ff0000", stroke: "#cc0000", strokeWidth: 0.5 }; // Style pour le marqueur d'origine
+
+    return (
+      <circle cx={0} cy={0} r={3} {...originMarkerStyle} />
+    );
+  };
+
   return (
     <div className="w-full h-full">
       <svg
+        ref={svgRef}
         width="100%"
         height="100%"
+        viewBox={viewBoxString}
         onMouseDown={onCanvasMouseDown}
         onClick={onCanvasClick}
         style={{ ...svgStyle, display: "block" }}
-        ref={svgRef}
+        onContextMenu={(e) => e.preventDefault()}
       >
-        {/* Affichage des formes finalisées */}
+        {/* Rendu de la grille en premier pour qu'elle soit en arrière-plan */}
+        {renderGridLines()}
+        {/* Rendu des axes */}
+        {renderAxes()}
+        {/* Rendu du marqueur d'origine */}
+        {renderOriginMarker()}
+
         {shapes.map((shape) => {
           const pointsString = shape.points
             ? shape.points.map((p) => `${p.x},${p.y}`).join(" ")
@@ -359,10 +443,10 @@ function SvgCanvas({
               x={angle.x}
               y={angle.y}
               fontSize="10"
-              fill="purple" // Couleur distincte pour les angles
+              fill={angle.value < minAngleForProduction ? "red" : "black"}
               textAnchor="middle"
               dominantBaseline="middle"
-              style={{ pointerEvents: "none" }}
+              pointerEvents="none"
             >
               {angle.value}°
             </text>
@@ -379,7 +463,7 @@ function SvgCanvas({
           />
         )}
         {previewShape && previewShape.type === "square" && (
-          <rect // Un carré est aussi un rect
+          <rect
             x={previewShape.x}
             y={previewShape.y}
             width={previewShape.width}
@@ -399,5 +483,29 @@ function SvgCanvas({
     </div>
   );
 }
+
+SvgCanvas.propTypes = {
+  shapes: PropTypes.arrayOf(PropTypes.object).isRequired,
+  currentPoints: PropTypes.arrayOf(PropTypes.object).isRequired,
+  onCanvasMouseDown: PropTypes.func.isRequired,
+  selectedShapeId: PropTypes.string,
+  onShapeClick: PropTypes.func.isRequired,
+  selectedPointIndex: PropTypes.number,
+  onVertexMouseDown: PropTypes.func.isRequired,
+  svgUnitsPerMm: PropTypes.number.isRequired,
+  isDraggingVertex: PropTypes.bool.isRequired,
+  snappedPreviewPoint: PropTypes.object,
+  isDrawing: PropTypes.bool.isRequired,
+  onSegmentRightClick: PropTypes.func.isRequired,
+  displayedAngles: PropTypes.arrayOf(PropTypes.object).isRequired,
+  previewShape: PropTypes.object,
+  onCanvasClick: PropTypes.func.isRequired,
+  showGrid: PropTypes.bool,
+  gridSpacing: PropTypes.number,
+  minAngleForProduction: PropTypes.number,
+  showAxes: PropTypes.bool,
+  showOriginMarker: PropTypes.bool,
+  viewBoxString: PropTypes.string,
+};
 
 export default SvgCanvas;

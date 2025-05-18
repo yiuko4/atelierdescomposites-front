@@ -117,11 +117,40 @@ function App() {
   const [shapeCreationStartPoint, setShapeCreationStartPoint] = useState(null); // {x, y}
   const [previewShape, setPreviewShape] = useState(null); // Object décrivant la forme en prévisualisation
 
+  // Nouveaux états pour la grille
+  const [showGrid, setShowGrid] = useState(true);
+  const [gridSpacingMm, setGridSpacingMm] = useState(10); // Espacement de la grille en mm (contrôlé par l'utilisateur)
+  const [showAxes, setShowAxes] = useState(true); // Nouvel état pour afficher les axes X/Y
+  const [showOriginMarker, setShowOriginMarker] = useState(true); // Nouvel état pour afficher le marqueur d'origine
+  const [isCtrlKeyPressed, setIsCtrlKeyPressed] = useState(false); // État pour la touche Ctrl (peut être utile pour la réactivité UI)
+  const isCtrlKeyPressedRef = useRef(false); // Ref pour un accès synchrone à l'état de Ctrl
+
+  // États pour le panoramique et le zoom (ViewBox)
+  const [viewBoxCoords, setViewBoxCoords] = useState({ x: 0, y: 0, width: 800, height: 600 }); // Valeurs initiales par défaut
+  const [activeTool, setActiveTool] = useState('draw'); // 'draw', 'pan'
+  const [isPanning, setIsPanning] = useState(false);
+  const [panStartPoint, setPanStartPoint] = useState({ screenX: 0, screenY: 0, initialViewBoxX: 0, initialViewBoxY: 0 });
+
   const svgCanvasRef = useRef(null);
   const vertexPressTimer = useRef(null); // Pour le délai du clic maintenu
   const vertexMouseDownInfo = useRef(null); // { shapeId, pointIndex, clientX, clientY }
 
   const SEGMENT_CLICK_THRESHOLD = 10; // En unités SVG
+
+  // Fonction d'ancrage à la grille
+  const snapToGrid = useCallback((point, actualGridSpacing) => {
+    // Utiliser la ref pour l'état le plus à jour de Ctrl
+    if (!showGrid || !isCtrlKeyPressedRef.current || actualGridSpacing <= 0) {
+      return point;
+    }
+    return {
+      x: Math.round(point.x / actualGridSpacing) * actualGridSpacing,
+      y: Math.round(point.y / actualGridSpacing) * actualGridSpacing,
+    };
+  // La dépendance à isCtrlKeyPressed (state) est retirée, car on utilise la ref.
+  // isCtrlKeyPressedRef.current change ne redéclenchera pas useCallback, ce qui est ok ici
+  // car la logique interne lit la valeur actuelle de la ref.
+  }, [showGrid]); 
 
   // Fonction pour ajouter l'état actuel à l'historique
   const addToHistory = useCallback(
@@ -165,36 +194,45 @@ function App() {
   const finalizeShape = useCallback(() => {
     if (currentPoints.length < 2) return;
 
+    const existingPrincipalShape = shapes.find(s => s.type === 'polygon' || s.type === 'polyline');
+    if (existingPrincipalShape) {
+      if (!window.confirm("Une forme principale existe déjà. Voulez-vous la remplacer par la nouvelle forme dessinée ?")) {
+        return; // L'utilisateur a annulé le remplacement
+      }
+    }
+
     if (!isUndoRedoAction) {
       addToHistory({
         type: "shapes",
-        shapes: JSON.parse(JSON.stringify(shapes)),
+        shapes: JSON.parse(JSON.stringify(shapes)), // Sauvegarde de l'état actuel des formes
       });
     }
 
     let processedPoints = [...currentPoints];
-    const initialNumPoints = currentPoints.length;
-    const isInitiallyPolygon = initialNumPoints >= 3;
+    const isPolygon = processedPoints.length >= 3;
 
     const newShape = {
-      id: `shape${shapes.length + 1}`,
-      type: isInitiallyPolygon ? "polygon" : "polyline",
+      id: `shape_drawn_${Date.now()}`, // ID unique pour la forme dessinée
+      type: isPolygon ? "polygon" : "polyline",
       points: processedPoints,
-      fill: isInitiallyPolygon ? "rgba(0, 200, 100, 0.3)" : "none",
+      fill: isPolygon ? "rgba(0, 200, 100, 0.3)" : "none",
       stroke: "black",
       strokeWidth: 2,
     };
 
-    const otherShapes = shapes.filter(
-      (s) => s.type !== "polygon" && s.type !== "polyline"
-    );
+    setShapesAndPersist(prevShapes => {
+      // Filtrer les anciennes formes principales (polygones/polylignes)
+      const nonPrincipalShapes = prevShapes.filter(
+        (s) => s.type !== "polygon" && s.type !== "polyline"
+      );
+      return [...nonPrincipalShapes, newShape]; // Ajouter la nouvelle forme principale
+    });
 
-    setShapesAndPersist([...otherShapes, newShape]);
     setSelectedShapeId(newShape.id);
     resetDrawingState();
   }, [
     currentPoints,
-    shapes,
+    shapes, // Nécessaire pour vérifier les formes existantes pour la confirmation
     resetDrawingState,
     addToHistory,
     isUndoRedoAction,
@@ -290,12 +328,20 @@ function App() {
       }
 
       if (event.key === "Enter") {
+        // Vérifier si l'on est dans un élément de saisie (input, textarea, etc.)
+        const targetTagName = event.target.tagName.toLowerCase();
+        const isEditingInput =
+          targetTagName === "input" ||
+          targetTagName === "textarea" ||
+          event.target.isContentEditable;
+
         if (
+          !isEditingInput &&
           currentPoints.length >= 2 &&
           !draggingVertexInfo &&
-          !selectedShapeId // S'assurer qu'aucune forme n'est déjà sélectionnée pour finaliser (évite conflit avec sélection)
+          !drawingToolMode // Ne pas finaliser si un outil de forme (rect, circle) est actif
         ) {
-          finalizeShape(); // Maintenant défini avant cet useEffect
+          finalizeShape();
           event.preventDefault();
         }
       }
@@ -358,7 +404,7 @@ function App() {
   }, [
     currentPoints,
     draggingVertexInfo,
-    selectedShapeId,
+    selectedShapeId, // Garder pour la suppression de sommet/forme
     finalizeShape,
     handleUndo,
     handleRedo,
@@ -366,6 +412,7 @@ function App() {
     shapes,
     addToHistory,
     isUndoRedoAction,
+    drawingToolMode, // Ajouter drawingToolMode aux dépendances pour la touche Entrée
   ]); // finalizeShape est dans les deps
 
   useEffect(() => {
@@ -498,74 +545,92 @@ function App() {
 
   // Nouveau gestionnaire pour le clic (après mousedown + mouseup)
   const handleCanvasClick = (event) => {
-    if (draggingVertexInfo) return;
+    if (activeTool === 'pan') return;
 
-    // Si un outil de forme est actif, ne pas traiter les clics (géré par mousedown/mousemove/mouseup)
+    if (draggingVertexInfo) return;
     if (drawingToolMode) return;
 
     const svgRect = svgCanvasRef.current?.getBoundingClientRect();
     if (!svgRect) return;
-    const x = event.clientX - svgRect.left;
-    const y = event.clientY - svgRect.top;
+    
+    // Convertir immédiatement les coordonnées de clic en coordonnées SVG
+    const screenX = event.clientX - svgRect.left;
+    const screenY = event.clientY - svgRect.top;
+    const svgClickPoint = { x: screenX + viewBoxCoords.x, y: screenY + viewBoxCoords.y };
 
-    // Si on est en train de dessiner, on continue à ajouter des points
+    const actualGridSpacing = gridSpacingMm * svgUnitsPerMm;
+
+    // Si on est en train de dessiner (ajout de points à une polyligne existante)
     if (currentPoints.length > 0) {
-      if (snappedPreviewPoint) {
-        const newPoints = [...currentPoints, { ...snappedPreviewPoint }];
-        // Ajouter à l'historique avant de modifier l'état
-        if (!isUndoRedoAction) {
-          addToHistory({
-            type: "drawing",
-            points: [...currentPoints], // Points avant l'ajout
-          });
-        }
-        setCurrentPoints(newPoints);
+      // snappedPreviewPoint est déjà en coordonnées SVG et potentiellement snappé (calculé dans handleSvgMouseMove)
+      // Si snappedPreviewPoint n'est pas défini (cas limite), on utilise le point de clic actuel, snappé.
+      const pointToAdd = snappedPreviewPoint ? { ...snappedPreviewPoint } : snapToGrid(svgClickPoint, actualGridSpacing);
+      
+      const newPoints = [...currentPoints, pointToAdd];
+      if (!isUndoRedoAction) {
+        addToHistory({ type: "drawing", points: [...currentPoints] });
       }
+      setCurrentPoints(newPoints);
       return;
     }
 
-    // Si pas de forme principale ou si on démarre le dessin
-    if (!hasPrincipalShape) {
-      // Ajouter à l'historique avant de modifier l'état
+    // Si on démarre un nouveau dessin de polyligne (premier point)
+    if (!hasPrincipalShape) { // Ou une condition plus spécifique si on veut permettre de démarrer un dessin même si une forme existe
       if (!isUndoRedoAction && currentPoints.length === 0) {
-        addToHistory({
-          type: "drawing",
-          points: [], // Points avant l'ajout (aucun)
-        });
+        addToHistory({ type: "drawing", points: [] });
       }
-      setCurrentPoints([{ x, y }]);
-      setSnappedPreviewPoint({ x, y });
+      // Le premier point est le point de clic (converti en SVG), snappé si nécessaire.
+      const startPoint = snapToGrid(svgClickPoint, actualGridSpacing);
+      setCurrentPoints([startPoint]);
+      setSnappedPreviewPoint(startPoint); // Le snappedPreviewPoint initial est le point de départ lui-même
       return;
     }
 
-    // Ici, on a une forme principale mais on n'est pas en train de dessiner
-    // On va vérifier si on clique sur le fond ou sur un élément
+    // Clic sur le fond du canvas, sans action spécifique pour l'instant si une forme existe et qu'on ne dessine pas
     if (event.target === event.currentTarget) {
-      // Clic sur le fond mais on ne désélectionne plus la forme
-      // On garde la sélection pour continuer à pouvoir éditer
       return;
     }
   };
 
   const handleCanvasMouseDown = (event) => {
-    if (draggingVertexInfo) return;
-
     const svgRect = svgCanvasRef.current?.getBoundingClientRect();
     if (!svgRect) return;
-    const x = event.clientX - svgRect.left;
-    const y = event.clientY - svgRect.top;
 
-    // Le mouseDown est principalement utilisé pour le début du dessin de forme
-    if (drawingToolMode) {
-      // Si un outil de forme est actif (rectangle, carré, cercle)
-      if (!shapeCreationStartPoint) {
-        // Premier clic : définir le point de départ de la forme
-        setShapeCreationStartPoint({ x, y });
-        setPreviewShape({ type: drawingToolMode, x1: x, y1: y, x2: x, y2: y }); // Initialiser la prévisualisation
-      }
-      event.stopPropagation(); // Empêcher que le clic soit traité comme un clic normal
+    if (activeTool === 'pan') {
+      setIsPanning(true);
+      setPanStartPoint({
+        screenX: event.clientX,
+        screenY: event.clientY,
+        initialViewBoxX: viewBoxCoords.x,
+        initialViewBoxY: viewBoxCoords.y,
+      });
+      event.preventDefault();
+      return;
     }
-    // Si ce n'est pas un outil de forme, le clic sera traité par handleCanvasClick
+
+    // Ne pas initier de drag de sommet ou de dessin de forme si pas en mode dessin
+    if (activeTool !== 'draw') return; 
+
+    if (draggingVertexInfo) return; // Déjà géré par onVertexMouseDown
+
+    // Convertir les coordonnées de mousedown en coordonnées SVG
+    const screenX = event.clientX - svgRect.left;
+    const screenY = event.clientY - svgRect.top;
+    const svgDownPoint = { x: screenX + viewBoxCoords.x, y: screenY + viewBoxCoords.y };
+
+    const actualGridSpacing = gridSpacingMm * svgUnitsPerMm;
+
+    // Si un outil de forme est actif (rectangle, carré, cercle)
+    if (drawingToolMode) { 
+      if (!shapeCreationStartPoint) {
+        // Le point de départ de la forme est le point de mousedown (converti en SVG), snappé si nécessaire.
+        const startPoint = snapToGrid(svgDownPoint, actualGridSpacing);
+        setShapeCreationStartPoint(startPoint); 
+        setPreviewShape({ type: drawingToolMode, x1: startPoint.x, y1: startPoint.y, x2: startPoint.x, y2: startPoint.y });
+      }
+      event.stopPropagation(); 
+    }
+    // Si aucun outil de forme n'est actif, le mousedown sur le canvas ne fait rien ici (le clic sera géré par handleCanvasClick pour le dessin de polyligne)
   };
 
   const deleteAllShapes = () => {
@@ -643,8 +708,20 @@ function App() {
   };
 
   const handleSvgMouseMove = (event) => {
-    // Gestion du délai pour le drag de sommet
-    if (vertexPressTimer.current && vertexMouseDownInfo.current) {
+    const actualGridSpacing = gridSpacingMm * svgUnitsPerMm;
+
+    if (isPanning) {
+      const deltaX = event.clientX - panStartPoint.screenX;
+      const deltaY = event.clientY - panStartPoint.screenY;
+      setViewBoxCoords(prev => ({
+        ...prev,
+        x: panStartPoint.initialViewBoxX - deltaX,
+        y: panStartPoint.initialViewBoxY - deltaY,
+      }));
+      return;
+    }
+
+    if (vertexPressTimer.current && vertexMouseDownInfo.current && activeTool === 'draw') {
       const { clientX: initialX, clientY: initialY } =
         vertexMouseDownInfo.current;
       const dx = event.clientX - initialX;
@@ -662,15 +739,28 @@ function App() {
       const svgRect = svgCanvasRef.current?.getBoundingClientRect();
       if (!svgRect) return;
 
-      const x = event.clientX - svgRect.left;
-      const y = event.clientY - svgRect.top;
+      // Les coordonnées doivent être relatives au viewBox actuel si on veut un "vrai" snap à la grille
+      // Pour l'instant, le snap se fait par rapport aux coordonnées "écran" du SVG
+      let screenX = event.clientX - svgRect.left;
+      let screenY = event.clientY - svgRect.top;
+      
+      // Conversion des coordonnées écran en coordonnées SVG (tenant compte du pan)
+      let svgX = screenX + viewBoxCoords.x;
+      let svgY = screenY + viewBoxCoords.y;
+
+      let draggedPoint = { x: svgX, y: svgY };
+
+      // Utiliser la ref pour la condition de snap
+      if (isCtrlKeyPressedRef.current && showGrid && actualGridSpacing > 0) {
+        draggedPoint = snapToGrid(draggedPoint, actualGridSpacing);
+      }
 
       setShapesAndPersist(prevShapes =>
         prevShapes.map((shape) => {
           if (shape.id === shapeId && shape.points) {
             const newPoints = [...shape.points];
             if (pointIndex >= 0 && pointIndex < newPoints.length) {
-              newPoints[pointIndex] = { x, y };
+              newPoints[pointIndex] = draggedPoint; // Utiliser le point snappé
               return { ...shape, points: newPoints };
             }
           }
@@ -680,28 +770,39 @@ function App() {
       return;
     }
 
-    if (drawingToolMode && shapeCreationStartPoint) {
+    if (drawingToolMode && shapeCreationStartPoint && activeTool === 'draw') {
       const svgRect = svgCanvasRef.current?.getBoundingClientRect();
       if (!svgRect) return;
-      const mouseX = event.clientX - svgRect.left;
-      const mouseY = event.clientY - svgRect.top;
+      let screenX = event.clientX - svgRect.left;
+      let screenY = event.clientY - svgRect.top;
+
+      let svgX = screenX + viewBoxCoords.x;
+      let svgY = screenY + viewBoxCoords.y;
+
+      let currentMousePoint = { x: svgX, y: svgY };
+      // Utiliser la ref pour la condition de snap
+      if (isCtrlKeyPressedRef.current && showGrid && actualGridSpacing > 0) {
+        currentMousePoint = snapToGrid(currentMousePoint, actualGridSpacing);
+      }
+      svgX = currentMousePoint.x;
+      svgY = currentMousePoint.y;
 
       if (drawingToolMode === "rectangle") {
         setPreviewShape({
           type: "rectangle",
-          x: Math.min(shapeCreationStartPoint.x, mouseX),
-          y: Math.min(shapeCreationStartPoint.y, mouseY),
-          width: Math.abs(mouseX - shapeCreationStartPoint.x),
-          height: Math.abs(mouseY - shapeCreationStartPoint.y),
+          x: Math.min(shapeCreationStartPoint.x, svgX),
+          y: Math.min(shapeCreationStartPoint.y, svgY),
+          width: Math.abs(svgX - shapeCreationStartPoint.x),
+          height: Math.abs(svgY - shapeCreationStartPoint.y),
           // Stocker les points originaux peut être utile aussi pour le carré/cercle plus tard
           x1: shapeCreationStartPoint.x,
           y1: shapeCreationStartPoint.y,
-          x2: mouseX,
-          y2: mouseY,
+          x2: svgX,
+          y2: svgY,
         });
       } else if (drawingToolMode === "square") {
-        const dx = mouseX - shapeCreationStartPoint.x;
-        const dy = mouseY - shapeCreationStartPoint.y;
+        const dx = svgX - shapeCreationStartPoint.x;
+        const dy = svgY - shapeCreationStartPoint.y;
         const side = Math.max(Math.abs(dx), Math.abs(dy)); // Pour un carré inscrit dans le rect du drag
         // Ou side = Math.min(Math.abs(dx), Math.abs(dy)) pour un carré qui ne dépasse pas;
         // Ou d'autres logiques (ex: distance au centre)
@@ -717,13 +818,13 @@ function App() {
           height: side,
           x1: shapeCreationStartPoint.x,
           y1: shapeCreationStartPoint.y,
-          x2: mouseX,
-          y2: mouseY, // Garder les points du curseur pour feedback
+          x2: svgX,
+          y2: svgY, // Garder les points du curseur pour feedback
         });
       } else if (drawingToolMode === "circle") {
         const radius = V.distance(shapeCreationStartPoint, {
-          x: mouseX,
-          y: mouseY,
+          x: svgX,
+          y: svgY,
         });
         setPreviewShape({
           type: "circle",
@@ -732,8 +833,8 @@ function App() {
           r: radius,
           x1: shapeCreationStartPoint.x,
           y1: shapeCreationStartPoint.y,
-          x2: mouseX,
-          y2: mouseY,
+          x2: svgX,
+          y2: svgY,
         });
       }
       // Pas de snappedPreviewPoint si on dessine une forme
@@ -741,33 +842,51 @@ function App() {
       return; // Empêcher la logique de snappedPreviewPoint pour polylignes
     }
 
-    if (currentPoints.length > 0) {
+    if (currentPoints.length > 0 && activeTool === 'draw') {
       const svgRect = svgCanvasRef.current?.getBoundingClientRect();
       if (!svgRect) {
         setSnappedPreviewPoint(null);
         return;
       }
-      const mouseX = event.clientX - svgRect.left;
-      const mouseY = event.clientY - svgRect.top;
+      let screenX = event.clientX - svgRect.left;
+      let screenY = event.clientY - svgRect.top;
+
+      let svgX = screenX + viewBoxCoords.x;
+      let svgY = screenY + viewBoxCoords.y;
+      
+      let previewPoint = { x: svgX, y: svgY };
 
       if (isOrthogonalMode) {
         const P_last = currentPoints[currentPoints.length - 1];
-        const dx = mouseX - P_last.x;
-        const dy = mouseY - P_last.y;
+        const dx = svgX - P_last.x;
+        const dy = svgY - P_last.y;
         if (Math.abs(dx) > Math.abs(dy)) {
-          setSnappedPreviewPoint({ x: mouseX, y: P_last.y });
+          previewPoint = { x: svgX, y: P_last.y };
         } else {
-          setSnappedPreviewPoint({ x: P_last.x, y: mouseY });
+          previewPoint = { x: P_last.x, y: svgY };
         }
-      } else {
-        setSnappedPreviewPoint({ x: mouseX, y: mouseY });
       }
+      // Appliquer le snap après l'ortho si Ctrl est pressé
+      // Utiliser la ref pour la condition de snap
+      if (isCtrlKeyPressedRef.current && showGrid && actualGridSpacing > 0) {
+        previewPoint = snapToGrid(previewPoint, actualGridSpacing);
+      }
+      setSnappedPreviewPoint(previewPoint);
+
     } else {
       setSnappedPreviewPoint(null);
     }
   };
 
   const handleSvgMouseUp = () => {
+    if (isPanning) {
+      setIsPanning(false);
+      // Optionnel: ajouter à l'historique si le pan est considéré comme une action annulable
+      return;
+    }
+
+    const actualGridSpacing = gridSpacingMm * svgUnitsPerMm;
+
     if (vertexPressTimer.current) {
       clearTimeout(vertexPressTimer.current);
       vertexPressTimer.current = null;
@@ -788,45 +907,60 @@ function App() {
 
     if (drawingToolMode && shapeCreationStartPoint && previewShape) {
       let pointsToConvert = [];
-      if (previewShape.type === "rectangle" || previewShape.type === "square") {
+      // Assurer que les points des formes prédéfinies sont snappés si Ctrl était actif
+      let finalPreviewShape = { ...previewShape };
+      if (isCtrlKeyPressedRef.current && showGrid && actualGridSpacing > 0) {
+        if (finalPreviewShape.type === "rectangle" || finalPreviewShape.type === "square") {
+          const p1 = snapToGrid({x: finalPreviewShape.x1, y: finalPreviewShape.y1}, actualGridSpacing); // x1,y1 sont les points de départ déjà snappés
+          const p2 = snapToGrid({x: finalPreviewShape.x2, y: finalPreviewShape.y2}, actualGridSpacing);
+          finalPreviewShape.x = Math.min(p1.x, p2.x);
+          finalPreviewShape.y = Math.min(p1.y, p2.y);
+          finalPreviewShape.width = Math.abs(p1.x - p2.x);
+          finalPreviewShape.height = Math.abs(p1.y - p2.y);
+        } else if (finalPreviewShape.type === "circle") {
+          // Le centre (shapeCreationStartPoint) est déjà snappé.
+          // Le rayon est déterminé par la distance au point du curseur, qui est aussi snappé.
+          const center = snapToGrid({x: finalPreviewShape.cx, y: finalPreviewShape.cy}, actualGridSpacing); // shapeCreationStartPoint
+          const edgePoint = snapToGrid({x: finalPreviewShape.x2, y: finalPreviewShape.y2}, actualGridSpacing); // point du curseur lors du mousemove
+          finalPreviewShape.cx = center.x;
+          finalPreviewShape.cy = center.y;
+          finalPreviewShape.r = V.distance(center, edgePoint);
+        }
+      }
+
+      if (finalPreviewShape.type === "rectangle" || finalPreviewShape.type === "square") {
         pointsToConvert = [
-          { x: previewShape.x, y: previewShape.y },
-          { x: previewShape.x + previewShape.width, y: previewShape.y },
+          { x: finalPreviewShape.x, y: finalPreviewShape.y },
+          { x: finalPreviewShape.x + finalPreviewShape.width, y: finalPreviewShape.y },
           {
-            x: previewShape.x + previewShape.width,
-            y: previewShape.y + previewShape.height,
+            x: finalPreviewShape.x + finalPreviewShape.width,
+            y: finalPreviewShape.y + finalPreviewShape.height,
           },
-          { x: previewShape.x, y: previewShape.y + previewShape.height },
+          { x: finalPreviewShape.x, y: finalPreviewShape.y + finalPreviewShape.height },
         ];
-      } else if (previewShape.type === "circle") {
+      } else if (finalPreviewShape.type === "circle") {
         const numSegments = 24; // Discrétisation du cercle
         for (let i = 0; i < numSegments; i++) {
           const angle = (i / numSegments) * 2 * Math.PI;
           pointsToConvert.push({
-            x: previewShape.cx + previewShape.r * Math.cos(angle),
-            y: previewShape.cy + previewShape.r * Math.sin(angle),
+            x: finalPreviewShape.cx + finalPreviewShape.r * Math.cos(angle),
+            y: finalPreviewShape.cy + finalPreviewShape.r * Math.sin(angle),
           });
         }
       }
 
       if (
         pointsToConvert.length > 0 &&
-        ((previewShape.type === "rectangle" &&
-          (previewShape.width > 0 || previewShape.height > 0)) ||
-          (previewShape.type === "square" && previewShape.width > 0) ||
-          (previewShape.type === "circle" && previewShape.r > 0))
+        ((finalPreviewShape.type === "rectangle" &&
+          (finalPreviewShape.width > 0 || finalPreviewShape.height > 0)) ||
+          (finalPreviewShape.type === "square" && finalPreviewShape.width > 0) ||
+          (finalPreviewShape.type === "circle" && finalPreviewShape.r > 0))
       ) {
-        // Utiliser la fonction addPredefinedShape existante ou une version adaptée
-        // addPredefinedShape remplace les formes existantes, ce qui est le comportement souhaité ici
-        addPredefinedShape(pointsToConvert); // La fonction addPredefinedShape gère déjà l'historique
+        addPredefinedShape(pointsToConvert);
       }
 
-      // Réinitialiser les états de dessin de forme
       setShapeCreationStartPoint(null);
       setPreviewShape(null);
-      // Optionnel : désactiver l'outil après usage, ou le laisser actif.
-      // Pour l'instant, laissons le actif.
-      // setDrawingToolMode(null);
     }
   };
 
@@ -1354,6 +1488,54 @@ function App() {
     }
   };
 
+  // Effet pour initialiser et mettre à jour la taille du viewBox en fonction du conteneur SVG
+  useEffect(() => {
+    const svgContainer = svgCanvasRef.current;
+    if (svgContainer) {
+      const { width, height } = svgContainer.getBoundingClientRect();
+      if (width > 0 && height > 0) {
+        setViewBoxCoords(prev => ({ ...prev, width, height }));
+      }
+
+      // Optionnel: ResizeObserver pour gérer les redimensionnements dynamiques du conteneur
+      const resizeObserver = new ResizeObserver(entries => {
+        for (let entry of entries) {
+          const { width, height } = entry.contentRect;
+          if (width > 0 && height > 0) {
+            setViewBoxCoords(prev => ({ ...prev, width, height }));
+          }
+        }
+      });
+      resizeObserver.observe(svgContainer);
+      return () => resizeObserver.unobserve(svgContainer);
+    }
+  }, []); // Se lance une fois au montage pour obtenir les dimensions initiales
+
+  // Convertir viewBoxCoords en chaîne pour SvgCanvas
+  const viewBoxString = `${viewBoxCoords.x} ${viewBoxCoords.y} ${viewBoxCoords.width} ${viewBoxCoords.height}`;
+
+  // Gestion de l'état de la touche Ctrl
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key === 'Control') {
+        setIsCtrlKeyPressed(true); // Mettre à jour l'état pour d'éventuels re-renders UI
+        isCtrlKeyPressedRef.current = true; // Mettre à jour la ref pour un accès immédiat
+      }
+    };
+    const handleKeyUp = (event) => {
+      if (event.key === 'Control') {
+        setIsCtrlKeyPressed(false); // Mettre à jour l'état
+        isCtrlKeyPressedRef.current = false; // Mettre à jour la ref
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('keyup', handleKeyUp);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []); // Correct: empty dependency array for setup/cleanup once
+
   return (
     <div className="bg-gray-100 min-h-screen flex flex-col">
       {/* Header Bar */}
@@ -1386,10 +1568,10 @@ function App() {
       </header>
 
       {/* Main content */}
-      <div className="flex-grow flex">
-        {/* Left panel - conditional display */}
+      <div className="flex-grow flex flex-row overflow-hidden"> {/* Changed to flex-row and added overflow-hidden */}
+        {/* Left panel - SVG Library */}
         {showSVGLibrary && (
-          <div className="w-72 p-3 bg-white border-r border-gray-200">
+          <div className="w-72 p-3 bg-white border-r border-gray-200 overflow-y-auto">
             <SVGLibraryPanel 
               onSelectSVG={handleSelectSVGFromLibrary}
               apiBaseUrl={`${API_BASE_URL}/api`}
@@ -1397,153 +1579,255 @@ function App() {
           </div>
         )}
 
-        {/* Center panel - canvas */}
-        <div className="flex-grow flex flex-col">
-          {/* Canvas */}
-          <div 
-            className="flex-grow bg-white shadow-sm cursor-crosshair overflow-hidden"
-            ref={svgCanvasRef}
-            onMouseMove={handleSvgMouseMove}
-            onMouseUp={handleSvgMouseUp}
-            onMouseLeave={handleSvgMouseUp}
-          >
-            <SvgCanvas
-              shapes={shapes}
-              currentPoints={currentPoints}
-              onCanvasMouseDown={handleCanvasMouseDown}
-              selectedShapeId={selectedShapeId}
-              onShapeClick={handleShapeClick}
-              selectedPointIndex={selectedPointIndex}
-              onVertexMouseDown={handleVertexMouseDown}
-              svgUnitsPerMm={svgUnitsPerMm}
-              isDraggingVertex={!!draggingVertexInfo}
-              snappedPreviewPoint={snappedPreviewPoint}
-              isDrawing={currentPoints.length > 0 && !draggingVertexInfo}
-              onSegmentRightClick={handleSegmentRightClick}
-              displayedAngles={displayedAngles}
-              previewShape={previewShape}
-              onCanvasClick={handleCanvasClick}
-            />
+        {/* Center panel - Canvas */}
+        <div 
+          className="flex-grow bg-white shadow-sm overflow-hidden min-w-0" // Removed cursor-crosshair, style is now dynamic
+          ref={svgCanvasRef}
+          style={{ cursor: activeTool === 'pan' ? (isPanning ? 'grabbing' : 'grab') : (drawingToolMode || currentPoints.length > 0 ? 'crosshair' : 'default') }} // Appliquer le style de curseur dynamique ici
+          onMouseMove={handleSvgMouseMove}
+          onMouseUp={handleSvgMouseUp}
+          onMouseLeave={handleSvgMouseUp} // Keep mouse leave on the canvas area
+        >
+          <SvgCanvas
+            shapes={shapes}
+            currentPoints={currentPoints}
+            onCanvasMouseDown={handleCanvasMouseDown} // This is for the canvas itself
+            selectedShapeId={selectedShapeId}
+            onShapeClick={handleShapeClick}
+            selectedPointIndex={selectedPointIndex}
+            onVertexMouseDown={handleVertexMouseDown}
+            svgUnitsPerMm={svgUnitsPerMm}
+            isDraggingVertex={!!draggingVertexInfo}
+            snappedPreviewPoint={snappedPreviewPoint}
+            isDrawing={currentPoints.length > 0 && !draggingVertexInfo}
+            onSegmentRightClick={handleSegmentRightClick}
+            displayedAngles={displayedAngles}
+            previewShape={previewShape}
+            onCanvasClick={handleCanvasClick} // General click on canvas
+            showGrid={showGrid}
+            gridSpacing={gridSpacingMm * svgUnitsPerMm}
+            minAngleForProduction={MIN_ANGLE_FOR_PRODUCTION}
+            showAxes={showAxes} // Passer la prop showAxes
+            showOriginMarker={showOriginMarker} // Passer la prop showOriginMarker
+            viewBoxString={viewBoxString} // Passer la chaîne viewBox
+          />
+        </div>
+
+        {/* Right panel - Toolbar */}
+        <div className="w-72 bg-gray-100 p-3 border-l border-gray-300 flex flex-col gap-4 overflow-y-auto">
+          {/* Section: Outils de Navigation/Mode */}
+          <div>
+            <h4 className="text-sm font-semibold uppercase text-gray-600 mb-2">Navigation & Mode</h4>
+            <div className="bg-white p-2 rounded shadow-sm flex flex-col gap-2">
+              {!hasPrincipalShape && ( // Conditionner l'affichage du bouton Dessin
+                <button
+                  onClick={() => setActiveTool('draw')}
+                  title="Mode Dessin"
+                  className={`p-2 rounded-md text-sm flex items-center gap-2 ${activeTool === 'draw' ? "bg-blue-100 text-blue-700" : "text-gray-700 hover:bg-gray-100"}`}
+                >
+                  {/* Icône Crayon/Dessin */}
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" /><path fillRule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clipRule="evenodd" /></svg>
+                  Dessin
+                </button>
+              )}
+              <button
+                onClick={() => setActiveTool('pan')}
+                title="Mode Panoramique (Main)"
+                className={`p-2 rounded-md text-sm flex items-center gap-2 ${activeTool === 'pan' ? "bg-orange-100 text-orange-700" : "text-gray-700 hover:bg-gray-100"}`}
+              >
+                {/* Icône Main */}
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 017.044 8.39l-1.847 1.846a.5.5 0 01-.708 0L12.5 12.75V16.5a.5.5 0 01-1 0V9.5a.5.5 0 01.5-.5h7a.5.5 0 010 1H12V8.5A5.5 5.5 0 019 3.5zM5.5 6A1.5 1.5 0 004 7.5V11H1.5a.5.5 0 000 1H4v3.5A1.5 1.5 0 005.5 17h4a1.5 1.5 0 001.5-1.5V13h2.5a.5.5 0 000-1H11V8.5A1.5 1.5 0 009.5 7h-4A1.5 1.5 0 004 7.5V6h1.5zm0-3A1.5 1.5 0 004 4.5V5h1.5V3zM7 1.5a.5.5 0 00-1 0V3h1.5a1.5 1.5 0 000-3H7zM3 5.5A1.5 1.5 0 014.5 4H6V3H4.5a.5.5 0 000 1H3v1.5z" clipRule="evenodd" /></svg>
+                Panoramique
+              </button>
+            </div>
           </div>
 
-          {/* Bottom toolbar */}
-          <div className="bg-gray-100 p-2 border-t border-gray-300 flex justify-between items-center">
-            <div className="flex gap-1">
-              {/* Drawing tools */}
-              <div className="bg-white p-1 rounded shadow-sm flex gap-1">
+          {/* Section: Outils de Forme - Conditionnellement affichée */}
+          {!hasPrincipalShape && (
+            <div>
+              <h4 className="text-sm font-semibold uppercase text-gray-600 mb-2">Outils de Forme</h4>
+              <div className="bg-white p-2 rounded shadow-sm flex flex-col gap-2">
                 <button
                   onClick={activatePointsMode}
-                  title="Mode Points"
-                  className={`p-1.5 rounded-md ${!drawingToolMode ? "bg-blue-100 text-blue-700" : "text-gray-600 hover:bg-gray-100"}`}
+                  title="Mode Points (Dessin libre)"
+                  className={`p-2 rounded-md text-sm flex items-center gap-2 ${!drawingToolMode ? "bg-blue-100 text-blue-700" : "text-gray-700 hover:bg-gray-100"}`}
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                     <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
                   </svg>
+                  Mode Points
                 </button>
                 <button
                   onClick={() => activateShapeTool("rectangle")}
-                  title="Rectangle"
-                  className={`p-1.5 rounded-md ${drawingToolMode === "rectangle" ? "bg-blue-100 text-blue-700" : "text-gray-600 hover:bg-gray-100"}`}
+                  title="Dessiner un Rectangle"
+                  className={`p-2 rounded-md text-sm flex items-center gap-2 ${drawingToolMode === "rectangle" ? "bg-blue-100 text-blue-700" : "text-gray-700 hover:bg-gray-100"}`}
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                     <path fillRule="evenodd" d="M5 4a3 3 0 00-3 3v10a3 3 0 003 3h10a3 3 0 003-3V7a3 3 0 00-3-3H5z" clipRule="evenodd" />
                   </svg>
+                  Rectangle
                 </button>
                 <button
                   onClick={() => activateShapeTool("square")}
-                  title="Carré"
-                  className={`p-1.5 rounded-md ${drawingToolMode === "square" ? "bg-blue-100 text-blue-700" : "text-gray-600 hover:bg-gray-100"}`}
+                  title="Dessiner un Carré"
+                  className={`p-2 rounded-md text-sm flex items-center gap-2 ${drawingToolMode === "square" ? "bg-blue-100 text-blue-700" : "text-gray-700 hover:bg-gray-100"}`}
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                     <path d="M5 3a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2V5a2 2 0 00-2-2H5z" />
                   </svg>
+                  Carré
                 </button>
                 <button
                   onClick={() => activateShapeTool("circle")}
-                  title="Cercle"
-                  className={`p-1.5 rounded-md ${drawingToolMode === "circle" ? "bg-blue-100 text-blue-700" : "text-gray-600 hover:bg-gray-100"}`}
+                  title="Dessiner un Cercle"
+                  className={`p-2 rounded-md text-sm flex items-center gap-2 ${drawingToolMode === "circle" ? "bg-blue-100 text-blue-700" : "text-gray-700 hover:bg-gray-100"}`}
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                     <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm0-2a6 6 0 100-12 6 6 0 000 12z" clipRule="evenodd" />
                   </svg>
+                  Cercle
                 </button>
               </div>
-              
-              {/* Edit tools */}
-              <div className="bg-white p-1 rounded shadow-sm flex gap-1 ml-2">
+            </div>
+          )}
+
+          {/* Section: Options de la Grille et Affichage */}
+          <div>
+            <h4 className="text-sm font-semibold uppercase text-gray-600 mb-2">Grille & Affichage</h4>
+            <div className="bg-white p-2 rounded shadow-sm flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <label htmlFor="showGridToggle" className="text-sm text-gray-700">Afficher la grille</label>
                 <button
-                  onClick={finalizeShape}
-                  disabled={currentPoints.length < 2}
-                  title="Terminer la forme"
-                  className={`p-1.5 rounded-md ${currentPoints.length >= 2 ? "text-green-700 hover:bg-gray-100" : "text-gray-400"}`}
+                  id="showGridToggle"
+                  onClick={() => setShowGrid(!showGrid)}
+                  title={showGrid ? "Cacher la grille" : "Afficher la grille"}
+                  className={`p-1.5 rounded-md ${showGrid ? "bg-indigo-100 text-indigo-700" : "text-gray-600 hover:bg-gray-100"}`}
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                  </svg>
-                </button>
-                <button
-                  onClick={() => setIsOrthogonalMode(!isOrthogonalMode)}
-                  title={isOrthogonalMode ? "Désactiver Mode Ortho" : "Activer Mode Ortho"}
-                  className={`p-1.5 rounded-md ${isOrthogonalMode ? "bg-indigo-100 text-indigo-700" : "text-gray-600 hover:bg-gray-100"}`}
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                    <path d="M5 3a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2V5a2 2 0 00-2-2H5zm0 2h5v5H5V5zm0 7h5v3H5v-3zm7 3h3v-3h-3v3zm0-5h3V5h-3v5z" />
-                  </svg>
-                </button>
-                <button
-                  onClick={resetPrincipalShape}
-                  disabled={!hasPrincipalShape && currentPoints.length === 0}
-                  title="Réinitialiser"
-                  className={`p-1.5 rounded-md ${hasPrincipalShape || currentPoints.length > 0 ? "text-red-700 hover:bg-gray-100" : "text-gray-400"}`}
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
+                    <path fillRule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 001 1h12a1 1 0 001-1V4a1 1 0 00-1-1H3zm1 2h2v2H4V5zm0 4h2v2H4V9zm0 4h2v2H4v-2zm4-8h2v2H8V5zm0 4h2v2H8V9zm0 4h2v2H8v-2zm4-8h2v2h-2V5zm0 4h2v2h-2V9zm0 4h2v2h-2v-2z" clipRule="evenodd" />
                   </svg>
                 </button>
               </div>
+              {/* Contrôle pour les axes */}
+              <div className="flex items-center justify-between pt-2 border-t mt-2">
+                <label htmlFor="showAxesToggle" className="text-sm text-gray-700">Afficher les Axes X/Y</label>
+                <button
+                  id="showAxesToggle"
+                  onClick={() => setShowAxes(!showAxes)}
+                  title={showAxes ? "Cacher les axes" : "Afficher les axes"}
+                  className={`p-1.5 rounded-md ${showAxes ? "bg-indigo-100 text-indigo-700" : "text-gray-600 hover:bg-gray-100"}`}
+                >
+                  {/* Idéalement une icône pour les axes ici */}
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                    <path d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" />
+                  </svg>
+                </button>
+              </div>
+              {/* Contrôle pour le marqueur d'origine */}
+              <div className="flex items-center justify-between pt-2 border-t mt-2">
+                <label htmlFor="showOriginMarkerToggle" className="text-sm text-gray-700">Afficher l'Origine (0,0)</label>
+                <button
+                  id="showOriginMarkerToggle"
+                  onClick={() => setShowOriginMarker(!showOriginMarker)}
+                  title={showOriginMarker ? "Cacher le marqueur d'origine" : "Afficher le marqueur d'origine"}
+                  className={`p-1.5 rounded-md ${showOriginMarker ? "bg-indigo-100 text-indigo-700" : "text-gray-600 hover:bg-gray-100"}`}
+                >
+                  {/* Idéalement une icône pour l'origine ici */}
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm0-2a6 6 0 100-12 6 6 0 000 12zM9 9a1 1 0 011-1h.01a1 1 0 110 2H10a1 1 0 01-1-1zm1-4a1 1 0 100 2 1 1 0 000-2zm-3 3a1 1 0 100 2 1 1 0 000-2zm6 0a1 1 0 100 2 1 1 0 000-2zm-3 3a1 1 0 100 2 1 1 0 000-2z" clipRule="evenodd" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+          
+          {/* Section: Édition de Forme */}
+          <div>
+            <h4 className="text-sm font-semibold uppercase text-gray-600 mb-2">Édition</h4>
+            <div className="bg-white p-2 rounded shadow-sm flex flex-col gap-2">
+              <button
+                onClick={finalizeShape}
+                disabled={currentPoints.length < 2}
+                title="Terminer la forme actuelle"
+                className={`p-2 rounded-md text-sm flex items-center gap-2 ${currentPoints.length >= 2 ? "text-green-700 hover:bg-green-50" : "text-gray-400"}`}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                </svg>
+                Terminer Forme
+              </button>
+              <button
+                onClick={() => setIsOrthogonalMode(!isOrthogonalMode)}
+                title={isOrthogonalMode ? "Désactiver Mode Orthogonal" : "Activer Mode Orthogonal"}
+                className={`p-2 rounded-md text-sm flex items-center gap-2 ${isOrthogonalMode ? "bg-indigo-100 text-indigo-700" : "text-gray-700 hover:bg-gray-100"}`}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path d="M5 3a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2V5a2 2 0 00-2-2H5zm0 2h5v5H5V5zm0 7h5v3H5v-3zm7 3h3v-3h-3v3zm0-5h3V5h-3v5z" />
+                </svg>
+                Mode Orthogonal
+              </button>
+              <button
+                onClick={resetPrincipalShape}
+                disabled={!hasPrincipalShape && currentPoints.length === 0}
+                title="Réinitialiser la forme principale"
+                className={`p-2 rounded-md text-sm flex items-center gap-2 ${hasPrincipalShape || currentPoints.length > 0 ? "text-red-700 hover:bg-red-50" : "text-gray-400"}`}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
+                </svg>
+                Réinitialiser Forme
+              </button>
               
               {/* Rounding tools - only shown when a vertex is selected */}
               {canRound && (
-                <div className="bg-white p-1 rounded shadow-sm flex items-center gap-1 ml-2">
-                  <div className="text-xs text-gray-600">Arrondi:</div>
-                  <input
-                    type="number"
-                    value={roundingRadius}
-                    onChange={(e) => setRoundingRadius(Math.max(0, parseInt(e.target.value, 10)))}
-                    className="w-12 p-1 text-xs border border-gray-300 rounded"
-                  />
-                  <button
-                    onClick={handleApplyRounding}
-                    className="p-1.5 rounded-md text-indigo-700 hover:bg-gray-100"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.707l-3-3a1 1 0 00-1.414 0l-3 3a1 1 0 001.414 1.414L9 9.414V13a1 1 0 102 0V9.414l1.293 1.293a1 1 0 001.414-1.414z" clipRule="evenodd" />
-                    </svg>
-                  </button>
+                <div className="pt-2 border-t border-gray-200 mt-2">
+                  <label htmlFor="roundingRadiusInput" className="text-sm text-gray-700 block mb-1">Rayon d'arrondi:</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      id="roundingRadiusInput"
+                      type="number"
+                      value={roundingRadius}
+                      onChange={(e) => setRoundingRadius(Math.max(0, parseInt(e.target.value, 10)))}
+                      className="w-full p-1.5 text-sm border border-gray-300 rounded"
+                    />
+                    <button
+                      onClick={handleApplyRounding}
+                      title="Appliquer l'arrondi au sommet sélectionné"
+                      className="p-1.5 rounded-md text-indigo-700 hover:bg-indigo-50 flex-shrink-0"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.707l-3-3a1 1 0 00-1.414 0l-3 3a1 1 0 001.414 1.414L9 9.414V13a1 1 0 102 0V9.414l1.293 1.293a1 1 0 001.414-1.414z" clipRule="evenodd" />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
-            
-            {/* Production tools */}
-            <div className="flex gap-1">
+          </div>
+
+          {/* Section: Production */}
+          <div>
+            <h4 className="text-sm font-semibold uppercase text-gray-600 mb-2">Production</h4>
+            <div className="bg-white p-2 rounded shadow-sm flex flex-col gap-2">
               {selectedShapeId && (
                 <button
                   onClick={handleSaveToLibrary}
-                  className="px-2 py-1 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-500 transition-colors"
+                  className="p-2 rounded-md text-sm flex items-center justify-center gap-2 bg-blue-600 text-white hover:bg-blue-500 transition-colors"
                 >
-                  Sauvegarder
+                  Sauvegarder Pièce
                 </button>
               )}
               <button
                 onClick={exportToSvg}
                 disabled={shapes.length === 0 || isInProduction || hasTooSmallAngles}
-                className={`px-2 py-1 text-sm rounded transition-colors ${shapes.length === 0 || isInProduction || hasTooSmallAngles ? "bg-gray-400 text-gray-200" : "bg-teal-600 text-white hover:bg-teal-500"}`}
+                className={`p-2 rounded-md text-sm font-semibold flex items-center justify-center gap-2 transition-colors ${shapes.length === 0 || isInProduction || hasTooSmallAngles ? "bg-gray-300 text-gray-500 cursor-not-allowed" : "bg-teal-600 text-white hover:bg-teal-500"}`}
               >
-                {isInProduction ? "EN COURS..." : hasTooSmallAngles ? `Angle < ${MIN_ANGLE_FOR_PRODUCTION}°` : "PRODUCTION"}
+                {isInProduction ? "PRODUCTION EN COURS..." : hasTooSmallAngles ? `ANGLE < ${MIN_ANGLE_FOR_PRODUCTION}°` : "LANCER PRODUCTION"}
               </button>
             </div>
           </div>
         </div>
+        {/* End of Right Toolbar */}
       </div>
 
       {/* Modals */}
