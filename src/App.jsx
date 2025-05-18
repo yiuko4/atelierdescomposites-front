@@ -1,10 +1,15 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate } from 'react-router-dom';
 import PieceCreationVisualizer from "./components/PieceCreationVisualizer";
 import SvgCanvas from "./components/SvgCanvas";
 import ProductionTracker from "./components/ProductionTracker";
 import SaveSVGModal from './components/SaveSVGModal';
 import SVGLibraryPanel from './components/SVGLibraryPanel';
 import "./index.css";
+
+// Base URLs from environment variables with fallbacks
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:30001';
+const EMPORTEPIECE_WS_URL = import.meta.env.VITE_EMPORTEPIECE_WS_URL || 'http://localhost:3000';
 
 // --- Fonctions utilitaires pour la géométrie vectorielle ---
 const V = {
@@ -51,6 +56,7 @@ const TEXT_OFFSET_FOR_ANGLES = 15; // Décalage pour l'affichage du texte des an
 const MIN_ANGLE_FOR_PRODUCTION = 65; // Angle minimum requis pour la production
 
 function App() {
+  const navigate = useNavigate();
   const [isPopupOpen, setIsPopupOpen] = useState(false);
   const [etapes, setEtapes] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -73,7 +79,17 @@ function App() {
       });
   }, []);
 
-  const [shapes, setShapes] = useState([]);
+  const [shapes, setShapes] = useState(() => {
+    const savedShapes = sessionStorage.getItem('persistedShapes');
+    try {
+      return savedShapes ? JSON.parse(savedShapes) : [];
+    } catch (e) {
+      console.error("Failed to parse persisted shapes:", e);
+      sessionStorage.removeItem('persistedShapes'); // Clear corrupted data
+      return [];
+    }
+  });
+
   const [currentPoints, setCurrentPoints] = useState([]);
   const [selectedShapeId, setSelectedShapeId] = useState(null);
   const [selectedPointIndex, setSelectedPointIndex] = useState(null);
@@ -97,7 +113,9 @@ function App() {
   const [showProductionVisualizer, setShowProductionVisualizer] =
     useState(false); // Pour ouvrir le visualiseur avec les étapes de prod
 
-  // Nouveaux états pour les outils de dessin de formes prédéfinies
+  const [activeProductionJobId, setActiveProductionJobId] = useState(null); // Nouvel état pour la tâche active
+
+  // États pour les outils de dessin de formes prédéfinies (restaurés)
   const [drawingToolMode, setDrawingToolMode] = useState(null); // 'rectangle', 'square', 'circle', ou null
   const [shapeCreationStartPoint, setShapeCreationStartPoint] = useState(null); // {x, y}
   const [previewShape, setPreviewShape] = useState(null); // Object décrivant la forme en prévisualisation
@@ -117,6 +135,30 @@ function App() {
     },
     [isUndoRedoAction]
   );
+
+  useEffect(() => {
+    const savedShapes = sessionStorage.getItem('persistedShapes');
+    if (savedShapes) {
+      try {
+        const parsedShapes = JSON.parse(savedShapes);
+        if (parsedShapes.length > 0 && history.length === 0) {
+            // If history is empty and we have shapes, consider this the initial state for history
+            // This avoids an empty undo step if shapes are loaded from storage.
+            // Note: This might need adjustment based on how/when addToHistory is first called.
+        }
+      } catch (e) {
+        // already handled by useState initializer
+      }
+    }
+  }, []); // Run once on mount
+
+  const setShapesAndPersist = (newShapesOrCallback) => {
+    setShapes(prevShapes => {
+      const newActualShapes = typeof newShapesOrCallback === 'function' ? newShapesOrCallback(prevShapes) : newShapesOrCallback;
+      sessionStorage.setItem('persistedShapes', JSON.stringify(newActualShapes));
+      return newActualShapes;
+    });
+  };
 
   const resetDrawingState = useCallback(() => {
     setCurrentPoints([]);
@@ -150,7 +192,7 @@ function App() {
       (s) => s.type !== "polygon" && s.type !== "polyline"
     );
 
-    setShapes([...otherShapes, newShape]);
+    setShapesAndPersist([...otherShapes, newShape]);
     setSelectedShapeId(newShape.id);
     resetDrawingState();
   }, [
@@ -192,7 +234,7 @@ function App() {
         .filter((h) => h.type === "shapes")
         .pop();
       if (previousShapeState) {
-        setShapes(previousShapeState.shapes);
+        setShapesAndPersist(previousShapeState.shapes);
       } else {
         // S'il n'y a pas d'état de forme précédent dans l'historique (ex: on a annulé jusqu'au début du dessin des formes)
         // On cherche le premier état de forme dans l'historique original s'il y en avait un, sinon on vide.
@@ -200,12 +242,12 @@ function App() {
           (h) => h.type === "shapes"
         );
         if (newHistory.length === 0 && !firstShapeStateInHistory) {
-          setShapes([]); // Aucune forme dans l'historique initial
+          setShapesAndPersist([]); // Aucune forme dans l'historique initial
         } else if (newHistory.filter((h) => h.type === "shapes").length === 0) {
           // Si le newHistory ne contient plus de 'shapes', cela veut dire qu'on a annulé toutes les modifs de shapes
           // Il faut potentiellement revenir à un état où shapes était vide ou à son état initial si enregistré.
           // Pour l'instant, si aucun 'shapes' dans newHistory, on vide. On pourrait affiner.
-          setShapes([]);
+          setShapesAndPersist([]);
         }
         // Si previousShapeState est null mais newHistory contient encore des actions de dessin,
         // on ne change pas les shapes, car elles ont pu être établies avant ces actions de dessin.
@@ -215,7 +257,7 @@ function App() {
     setHistory(newHistory);
 
     setTimeout(() => setIsUndoRedoAction(false), 10);
-  }, [history, currentPoints, shapes]);
+  }, [history, currentPoints, shapes, addToHistory]);
 
   const handleRedo = useCallback(() => {
     if (future.length === 0) return;
@@ -228,14 +270,14 @@ function App() {
     if (nextAction.type === "drawing") {
       setCurrentPoints(nextAction.data);
     } else if (nextAction.type === "shapes") {
-      setShapes(nextAction.data);
+      setShapesAndPersist(nextAction.data);
     }
 
     setFuture(newFuture);
 
     // Réinitialiser le flag après un court délai
     setTimeout(() => setIsUndoRedoAction(false), 10);
-  }, [future]);
+  }, [future, shapes, addToHistory]);
 
   // Gestionnaire pour les raccourcis clavier (combiné et corrigé)
   useEffect(() => {
@@ -284,7 +326,7 @@ function App() {
           });
         }
 
-        setShapes((prevShapes) => {
+        setShapesAndPersist(prevShapes => {
           const newShapes = prevShapes.map((shape) => {
             if (shape.id === selectedShapeId) {
               const newPoints = [...shape.points];
@@ -450,7 +492,7 @@ function App() {
       stroke: "blue",
       strokeWidth: 1,
     };
-    setShapes([...shapes, newRect]);
+    setShapesAndPersist([...shapes, newRect]);
   };
 
   const hasPrincipalShape = shapes.some(
@@ -530,23 +572,33 @@ function App() {
   };
 
   const deleteAllShapes = () => {
-    setShapes(shapes.filter((s) => s.type === "rect"));
+    if (!isUndoRedoAction) {
+        addToHistory({ type: "shapes", shapes: JSON.parse(JSON.stringify(shapes)) });
+    }
+    setShapesAndPersist([]);
+    setCurrentPoints([]);
     setSelectedShapeId(null);
-    resetDrawingState();
+    setSelectedPointIndex(null);
+    setDrawingToolMode(null);
+    setPreviewShape(null);
+    setDisplayedAngles([]);
+    sessionStorage.removeItem('persistedShapes'); // Clear from storage
   };
 
   const resetPrincipalShape = () => {
-    // Ajouter à l'historique avant de modifier l'état
     if (!isUndoRedoAction) {
-      addToHistory({
-        type: "shapes",
-        shapes: JSON.parse(JSON.stringify(shapes)),
-      });
+        addToHistory({ type: "shapes", shapes: JSON.parse(JSON.stringify(shapes)) });
     }
-
-    setShapes(shapes.filter((s) => s.type === "rect"));
+    // This function seems to imply a single "principal" shape concept not fully fleshed out
+    // For now, it behaves like deleteAllShapes for simplicity of persistence.
+    setShapesAndPersist([]); // MODIFIED
+    setCurrentPoints([]);
     setSelectedShapeId(null);
-    resetDrawingState();
+    setSelectedPointIndex(null);
+    setDrawingToolMode(null);
+    setPreviewShape(null);
+    setDisplayedAngles([]);
+    sessionStorage.removeItem('persistedShapes'); // Clear from storage
   };
 
   const handleShapeClick = (shapeId) => {
@@ -616,7 +668,7 @@ function App() {
       const x = event.clientX - svgRect.left;
       const y = event.clientY - svgRect.top;
 
-      setShapes((prevShapes) =>
+      setShapesAndPersist(prevShapes =>
         prevShapes.map((shape) => {
           if (shape.id === shapeId && shape.points) {
             const newPoints = [...shape.points];
@@ -913,24 +965,23 @@ function App() {
     const updatedShapes = shapes.map((s, idx) =>
       idx === shapeIndex ? { ...s, points: newPoints } : s
     );
-    setShapes(updatedShapes);
+    setShapesAndPersist(updatedShapes);
     setSelectedPointIndex(null);
+  };
+
+  // Callback pour ProductionTracker pour signaler la fin d'une tâche
+  const handleProductionTaskCompletion = (success) => {
+    console.log(`App.jsx: Production task ended from tracker. Success: ${success}`);
+    setIsInProduction(false);
+    // setActiveProductionJobId(null); // Le tracker ne le fait plus, donc App pourrait le faire si nécessaire
+                                     // ou laisser l\'utilisateur naviguer ailleurs pour \"effacer\" le job.
   };
 
   const exportToSvg = async () => {
     const selectedShape = shapes.find((s) => s.id === selectedShapeId);
-    
-    if (!selectedShape) {
-      // Inform user to create or select a shape first
+    if (!selectedShape || !selectedShape.points || selectedShape.points.length < 2) {
       alert(
-        "Vous devez d'abord créer ou sélectionner une forme pour l'exporter."
-      );
-      return;
-    }
-
-    if (hasTooSmallAngles) {
-      alert(
-        `Cette forme a des angles trop petits (inférieurs à ${MIN_ANGLE_FOR_PRODUCTION}°).\nLa production pourrait échouer avec de tels angles.`
+        "Veuillez sélectionner une forme valide avec au moins 2 points pour l\'exportation."
       );
       return;
     }
@@ -938,35 +989,21 @@ function App() {
     setIsInProduction(true);
 
     try {
-      const svgPoints = selectedShape.points.map((p) => ({
-        x: p.x,
-        y: p.y,
-      }));
-
-      // Prepare SVG content
+      const svgPoints = selectedShape.points.map((p) => (`${p.x},${p.y}`)).join(' ');
       const svgWidth = 800;
       const svgHeight = 600;
-      const svgContent = `
-      <svg width="${svgWidth}" height="${svgHeight}" xmlns="http://www.w3.org/2000/svg">
-        <polygon points="${svgPoints
-          .map((p) => `${p.x},${p.y}`)
-          .join(" ")}" fill="none" stroke="black" />
-      </svg>
-      `;
-
-      // Create Blob and File from SVG content
+      const svgContent = `<svg width="${svgWidth}" height="${svgHeight}" xmlns="http://www.w3.org/2000/svg"><polygon points="${svgPoints}" fill="none" stroke="black" /></svg>`;
+      
       const blob = new Blob([svgContent], { type: "image/svg+xml" });
       const file = new File([blob], "shape.svg", { type: "image/svg+xml" });
-
-      // Prepare form data for API request
+      
       const formData = new FormData();
       formData.append("svgfile", file);
-      formData.append("sendToApi", "true"); // Envoyer à l'API machine
-      formData.append("closePolygons", "true"); // Fermer les polygones
+      formData.append("sendToApi", "true");
+      formData.append("closePolygons", "true");
 
-      // Send request to SVG API
       const response = await fetch(
-        "http://localhost:30001/api/direct/svg-to-sequence",
+        `${API_BASE_URL}/api/direct/svg-to-sequence`,
         {
           method: "POST",
           body: formData,
@@ -976,73 +1013,23 @@ function App() {
       const data = await response.json();
 
       if (data.success) {
-        console.log("Export réussi:", data);
+        console.log("Export API réussi:", data);
+        const jobId = data.pieceId || `job_${Date.now()}`;
+        // --- MODIFICATION: Persist shapes before navigating ---
+        // No explicit save needed here if setShapesAndPersist is used everywhere shapes are modified.
+        // The latest shapes should already be in sessionStorage.
+        // However, to be absolutely sure, an explicit save can be done:
+        sessionStorage.setItem('persistedShapes', JSON.stringify(shapes));
 
-        // Store the production sequence and show visualizer if available
-        if (data.actions && data.actions.length > 0) {
-          setProductionSequence(data.actions);
-          setShowProductionVisualizer(true);
-        }
-        
-        // Afficher le suivi de production après un délai pour permettre au serveur de mettre à jour le statut
-        setTimeout(() => {
-          setShowProductionTracker(true);
-        }, 1000);
+        navigate(`/production/${jobId}`);
       } else {
-        console.error("Erreur d'export:", data.message);
-        alert(`Erreur lors de l'exportation: ${data.message}`);
-      }
-    } catch (error) {
-      console.error("Erreur lors de l'export:", error);
-      alert("Une erreur est survenue lors de l'exportation.");
-    } finally {
-      setIsInProduction(false);
-    }
-  };
-
-  const handleStopProduction = async () => {
-    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "";
-    const apiUrlPath = `${apiBaseUrl}/api/emergency/stop`;
-
-    console.log("Tentative d'arrêt de la production via API...");
-
-    try {
-      const response = await fetch(apiUrlPath, {
-        method: "POST",
-        // Pas de corps nécessaire si l'API n'en attend pas pour un simple arrêt
-        // Headers peuvent être ajoutés si nécessaire (ex: Authorization)
-      });
-
-      if (response.ok) {
-        const result = await response.json().catch(() => ({})); // Essayer de parser JSON, sinon objet vide
-        console.log("Arrêt de production réussi (API):", result);
-        alert(result.message || "La production a été arrêtée avec succès.");
-        setIsInProduction(false);
-      } else {
-        const errorResult = await response.json().catch(() => ({
-          message: `Erreur ${response.status} lors de l'arrêt de la production.`,
-        }));
-        console.error(
-          "Erreur de l'API lors de l'arrêt de production:",
-          errorResult
-        );
-        alert(
-          errorResult.message ||
-            `Erreur ${response.status} de l\'API lors de la tentative d\'arrêt.`
-        );
-        // Optionnel: garder isInProduction à true si l'arrêt API échoue et qu'on veut forcer une nouvelle tentative.
-        // Pour l'instant, on le remet à false pour débloquer l'UI.
+        console.error("Erreur d\'export API:", data.message);
+        alert(`Erreur lors de l\'exportation (API): ${data.message}`);
         setIsInProduction(false);
       }
     } catch (error) {
-      console.error(
-        "Erreur de connexion lors de la tentative d'arrêt de production:",
-        error
-      );
-      alert(
-        `Erreur de connexion au serveur lors de la tentative d\'arrêt: ${error.message}`
-      );
-      // Idem, on remet à false pour débloquer l'UI
+      console.error("Erreur lors de l\'export (catch):", error);
+      alert("Une erreur est survenue lors de l\'exportation.");
       setIsInProduction(false);
     }
   };
@@ -1116,7 +1103,7 @@ function App() {
       });
     }
 
-    setShapes((prevShapes) => {
+    setShapesAndPersist(prevShapes => {
       const shapeIndex = prevShapes.findIndex((s) => s.id === shapeId);
       if (shapeIndex === -1) return prevShapes;
 
@@ -1191,7 +1178,7 @@ function App() {
       (s) => s.type !== "polygon" && s.type !== "polyline"
     );
 
-    setShapes([...otherShapes, newShape]);
+    setShapesAndPersist(prevShapes => [...prevShapes, newShape]);
     setSelectedShapeId(newShape.id);
     resetDrawingState(); // Efface currentPoints etc.
     setSelectedPointIndex(null);
@@ -1343,7 +1330,7 @@ function App() {
         type: "shapes",
         shapes: JSON.parse(JSON.stringify(shapes))
       });
-      setShapes([...shapes, newShape]);
+      setShapesAndPersist([...shapes, newShape]);
       setSelectedShapeId(newShape.id);
       
       // Display success message
@@ -1364,10 +1351,16 @@ function App() {
           </h1>
           <div className="flex space-x-2">
             <button
-              onClick={() => setShowProductionTracker(!showProductionTracker)}
+              onClick={() => {
+                  setShowProductionTracker(prev => !prev); // Bascule la visibilité
+                  if (!showProductionTracker) { // Si on l\'ouvre
+                    // On pourrait vouloir rafraîchir le job actif si on le ré-ouvre
+                    // Pour l\'instant, le tracker gérera sa propre logique de socket au montage / changement de prop
+                  }
+              }}
               className="px-3 py-1.5 rounded-md transition-colors text-sm bg-indigo-600 hover:bg-indigo-500"
             >
-              Suivi de production
+              {showProductionTracker ? "Cacher Suivi" : "Afficher Suivi"}
             </button>
             <button
               onClick={() => setShowSVGLibrary(!showSVGLibrary)}
@@ -1392,7 +1385,7 @@ function App() {
           <div className="w-72 p-3 bg-white border-r border-gray-200">
             <SVGLibraryPanel 
               onSelectSVG={handleSelectSVGFromLibrary}
-              apiBaseUrl="http://localhost:30001/api"
+              apiBaseUrl={`${API_BASE_URL}/api`}
             />
           </div>
         )}
@@ -1425,7 +1418,7 @@ function App() {
               onCanvasClick={handleCanvasClick}
             />
           </div>
-          
+
           {/* Bottom toolbar */}
           <div className="bg-gray-100 p-2 border-t border-gray-300 flex justify-between items-center">
             <div className="flex gap-1">
@@ -1541,12 +1534,6 @@ function App() {
               >
                 {isInProduction ? "EN COURS..." : hasTooSmallAngles ? `Angle < ${MIN_ANGLE_FOR_PRODUCTION}°` : "PRODUCTION"}
               </button>
-              <button
-                onClick={handleStopProduction}
-                className="px-2 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-500 transition-colors"
-              >
-                STOP
-              </button>
             </div>
           </div>
         </div>
@@ -1555,19 +1542,14 @@ function App() {
       {/* Modals */}
       {/* Production Tracker Modal */}
       {showProductionTracker && (
-        <div className="fixed inset-0 bg-black bg-opacity-75 z-50 flex items-center justify-center p-4">
-          <div className="w-full max-w-6xl max-h-[90vh] flex flex-col bg-white rounded-lg shadow-xl overflow-hidden">
-            <div className="flex-grow overflow-auto">
-              <ProductionTracker apiBaseUrl="http://localhost:30001/api" />
-            </div>
-            <div className="p-4 bg-gray-100 border-t flex justify-end">
-              <button
-                onClick={() => setShowProductionTracker(false)}
-                className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 transition-colors"
-              >
-                Fermer
-              </button>
-            </div>
+        <div className="fixed inset-0 bg-gray-800 bg-opacity-50 flex items-center justify-center p-4 z-30">
+          <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[80vh] flex flex-col">
+            <ProductionTracker 
+              apiBaseUrl={`${API_BASE_URL}/api`} 
+              activeProductionJobId={activeProductionJobId} 
+              onClose={() => setShowProductionTracker(false)}
+              onProductionTaskComplete={handleProductionTaskCompletion} 
+            />
           </div>
         </div>
       )}
