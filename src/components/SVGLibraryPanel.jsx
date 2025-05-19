@@ -3,10 +3,10 @@ import React, { useState, useEffect } from 'react';
 /**
  * Component for displaying the SVG library
  * @param {Object} props
- * @param {function} props.onSelectSVG - Callback when an SVG is selected
+ * @param {function} props.onSelectPiece - Callback when a piece is selected
  * @param {string} props.apiBaseUrl - Base URL for API calls
  */
-function SVGLibraryPanel({ onSelectSVG, apiBaseUrl = 'http://localhost:30001/api' }) {
+function SVGLibraryPanel({ onSelectPiece, apiBaseUrl = 'http://localhost:30001/api' }) {
   const [pieces, setPieces] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -80,7 +80,7 @@ function SVGLibraryPanel({ onSelectSVG, apiBaseUrl = 'http://localhost:30001/api
       const data = await response.json();
       
       if (data.success && data.piece && data.piece.svgContent) {
-        onSelectSVG(data.piece);
+        onSelectPiece(data.piece);
       } else {
         throw new Error('Contenu SVG non disponible');
       }

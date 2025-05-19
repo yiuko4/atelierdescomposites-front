@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from "react";
+import React, { useRef, useState, useEffect, forwardRef } from "react";
 import PropTypes from "prop-types";
 
 // Réutiliser les fonctions vectorielles de App.jsx si nécessaire pour les calculs
@@ -17,31 +17,47 @@ const V_canvas = {
   perpendicular: (p) => ({ x: -p.y, y: p.x }),
 };
 
-function SvgCanvas({
-  shapes,
-  currentPoints,
-  onCanvasMouseDown,
-  onCanvasClick,
-  selectedShapeId,
-  onShapeClick,
-  selectedPointIndex,
-  onVertexMouseDown,
-  svgUnitsPerMm,
-  isDraggingVertex,
-  snappedPreviewPoint,
-  isDrawing,
-  onSegmentRightClick,
-  displayedAngles,
-  previewShape,
-  showGrid = false,
-  gridSpacing = 20,
-  minAngleForProduction = 65,
-  showAxes = true,
-  showOriginMarker = true,
-  viewBoxString = "0 0 800 600",
-}) {
+const SvgCanvas = forwardRef((props, ref) => {
+  const {
+    shapes,
+    currentPoints,
+    onCanvasMouseDown,
+    onCanvasClick,
+    selectedShapeId,
+    onShapeClick,
+    selectedPointIndex,
+    onVertexMouseDown,
+    svgUnitsPerMm,
+    isDraggingVertex,
+    snappedPreviewPoint,
+    isDrawing,
+    onSegmentRightClick,
+    displayedAngles,
+    previewShape,
+    showGrid = false,
+    gridSpacing = 20,
+    minAngleForProduction = 65,
+    showAxes = true,
+    showOriginMarker = true,
+    viewBox,
+    onDoubleClick,
+    onMouseMove,
+    onMouseUp,
+    onFinishShape,
+    gridConfig,
+    activeTool,
+    isPanning,
+  } = props;
+
+  const viewBoxString = viewBox ? `${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}` : "0 0 800 600";
+  const actualGridSpacing = gridConfig?.gridSpacing || gridSpacing;
+  const showGridActual = gridConfig?.showGrid !== undefined ? gridConfig.showGrid : showGrid;
+  const showAxesActual = gridConfig?.showAxes !== undefined ? gridConfig.showAxes : showAxes;
+  const showOriginMarkerActual = gridConfig?.showOriginMarker !== undefined ? gridConfig.showOriginMarker : showOriginMarker;
+
   const currentPathPoints = currentPoints.map((p) => `${p.x},${p.y}`).join(" ");
-  const svgRef = useRef(null);
+  const internalSvgRef = useRef(null);
+  const actualRef = ref || internalSvgRef;
 
   const handleLocalShapeClick = (e, shapeId) => {
     e.stopPropagation(); // Empêche le clic de se propager au SVG parent (qui désélectionnerait)
@@ -61,6 +77,8 @@ function SvgCanvas({
     ? { cursor: "grabbing" }
     : isDrawing
     ? { cursor: "crosshair" }
+    : activeTool === 'pan' || isPanning 
+    ? { cursor: "grab" } // Main ouverte pour le mode Pan (devient 'grabbing' lors du drag)
     : {};
 
   // Points pour la prévisualisation de la forme en cours de dessin
@@ -69,8 +87,7 @@ function SvgCanvas({
     previewShapePoints = [...currentPoints, snappedPreviewPoint];
   }
   const previewPathString = previewShapePoints
-    .map((p) => `${p.x},${p.y}`)
-    .join(" ");
+    .map((p) => `${p.x},${p.y}`).join(" ");
 
   // Style pour la prévisualisation des formes (rectangle, cercle, etc.)
   const previewElementStyle = {
@@ -87,15 +104,17 @@ function SvgCanvas({
 
   // Fonction pour générer les lignes de la grille
   const renderGridLines = () => {
-    if (!showGrid || gridSpacing <= 0) return null;
+    if (!showGridActual || actualGridSpacing <= 0) return null;
 
+    console.log("Rendering grid with spacing:", actualGridSpacing, "showGrid:", showGridActual);
+    
     const [vx, vy, vWidth, vHeight] = viewBoxString.split(" ").map(Number);
 
     const lines = [];
 
     // Lignes verticales de la grille
-    for (let x = Math.floor(vx / gridSpacing) * gridSpacing; x < vx + vWidth; x += gridSpacing) {
-      if (x === 0 && showAxes) continue; // Ne pas redessiner l'axe Y si showAxes est vrai
+    for (let x = Math.floor(vx / actualGridSpacing) * actualGridSpacing; x < vx + vWidth; x += actualGridSpacing) {
+      if (x === 0 && showAxesActual) continue; // Ne pas redessiner l'axe Y si showAxes est vrai
       lines.push(
         <line
           key={`grid-v-${x}`}
@@ -109,8 +128,8 @@ function SvgCanvas({
       );
     }
     // Lignes horizontales de la grille
-    for (let y = Math.floor(vy / gridSpacing) * gridSpacing; y < vy + vHeight; y += gridSpacing) {
-      if (y === 0 && showAxes) continue; // Ne pas redessiner l'axe X si showAxes est vrai
+    for (let y = Math.floor(vy / actualGridSpacing) * actualGridSpacing; y < vy + vHeight; y += actualGridSpacing) {
+      if (y === 0 && showAxesActual) continue; // Ne pas redessiner l'axe X si showAxes est vrai
       lines.push(
         <line
           key={`grid-h-${y}`}
@@ -127,7 +146,7 @@ function SvgCanvas({
   };
 
   const renderAxes = () => {
-    if (!showAxes) return null;
+    if (!showAxesActual) return null;
     const [vx, vy, vWidth, vHeight] = viewBoxString.split(" ").map(Number);
     const axisStyle = { stroke: "#888888", strokeWidth: 1 }; // Style pour les axes
 
@@ -142,7 +161,7 @@ function SvgCanvas({
   };
 
   const renderOriginMarker = () => {
-    if (!showOriginMarker) return null;
+    if (!showOriginMarkerActual) return null;
     const originMarkerStyle = { fill: "#ff0000", stroke: "#cc0000", strokeWidth: 0.5 }; // Style pour le marqueur d'origine
 
     return (
@@ -150,16 +169,61 @@ function SvgCanvas({
     );
   };
 
+  // Gérer le double-clic pour terminer une forme
+  const handleDoubleClick = (e) => {
+    if (onDoubleClick) {
+      // Passer l'événement original pour une conversion précise des coordonnées
+      onDoubleClick(e);
+    }
+    
+    if (currentPoints.length >= 3 && onFinishShape) {
+      onFinishShape();
+    }
+  };
+
   return (
-    <div className="w-full h-full">
+    <div className="w-full h-full no-text-select" style={{
+      userSelect: "none",
+      WebkitUserSelect: "none",
+      MozUserSelect: "none",
+      msUserSelect: "none"
+    }}>
       <svg
-        ref={svgRef}
+        ref={actualRef}
         width="100%"
         height="100%"
         viewBox={viewBoxString}
-        onMouseDown={onCanvasMouseDown}
-        onClick={onCanvasClick}
-        style={{ ...svgStyle, display: "block" }}
+        onMouseDown={(e) => {
+          if (onCanvasMouseDown) {
+            // Passer l'événement original pour une conversion précise des coordonnées
+            onCanvasMouseDown(e);
+          }
+        }}
+        onClick={(e) => {
+          // Vérifier si le clic est sur le SVG lui-même et non un élément enfant
+          if (e.target === e.currentTarget && onCanvasClick) {
+            // Passer l'événement original pour une conversion précise des coordonnées
+            onCanvasClick(e);
+          }
+        }}
+        onDoubleClick={handleDoubleClick}
+        onMouseMove={(e) => {
+          if (onMouseMove) {
+            // Passer l'événement original pour une conversion précise des coordonnées
+            onMouseMove(e);
+          }
+        }}
+        onMouseUp={(e) => {
+          if (onMouseUp) {
+            // Passer l'événement original pour une conversion précise des coordonnées
+            onMouseUp(e);
+          }
+        }}
+        style={{ 
+          ...svgStyle, 
+          display: "block",
+          userSelect: "none"
+        }}
         onContextMenu={(e) => e.preventDefault()}
       >
         {/* Rendu de la grille en premier pour qu'elle soit en arrière-plan */}
@@ -208,6 +272,10 @@ function SvgCanvas({
                 x={shape.x + shape.width / 2}
                 y={shape.y - 5}
                 {...measurementTextStyle}
+                style={{
+                  userSelect: "none",
+                  cursor: "default"
+                }}
               >
                 {widthInMm} mm
               </text>,
@@ -218,6 +286,10 @@ function SvgCanvas({
                 {...measurementTextStyle}
                 textAnchor="end"
                 dominantBaseline="middle"
+                style={{
+                  userSelect: "none",
+                  cursor: "default"
+                }}
               >
                 {heightInMm} mm
               </text>
@@ -232,18 +304,28 @@ function SvgCanvas({
                 onClick={(e) => handleLocalShapeClick(e, shape.id)}
                 onContextMenu={(e) => {
                   e.preventDefault();
-                  if (onSegmentRightClick && svgRef.current) {
-                    const svgRect = svgRef.current.getBoundingClientRect();
-                    const [vx, vy] = viewBoxString.split(" ").map(Number); // Get vx, vy from viewBox
-                    const clientXInSvg = e.clientX - svgRect.left;
-                    const clientYInSvg = e.clientY - svgRect.top;
+                  e.stopPropagation();
+                  console.log("Segment right-click on polygon");
+                  if (onSegmentRightClick && actualRef.current) {
+                    const svgRect = actualRef.current.getBoundingClientRect();
+                    const svgPoint = actualRef.current.createSVGPoint();
+                    svgPoint.x = e.clientX;
+                    svgPoint.y = e.clientY;
                     
-                    // Convert to SVG world coordinates
-                    const svgX = clientXInSvg + vx;
-                    const svgY = clientYInSvg + vy;
-                    
-                    onSegmentRightClick(shape.id, { x: svgX, y: svgY });
+                    // Utiliser getScreenCTM pour une conversion précise
+                    const CTM = actualRef.current.getScreenCTM();
+                    if (CTM) {
+                      const transformedPoint = svgPoint.matrixTransform(CTM.inverse());
+                      onSegmentRightClick(shape.id, {
+                        x: transformedPoint.x,
+                        y: transformedPoint.y
+                      });
+                    }
                   }
+                }}
+                style={{
+                  ...styleProps,
+                  pointerEvents: isDraggingVertex ? "none" : "auto"
                 }}
               />
             );
@@ -257,18 +339,28 @@ function SvgCanvas({
                 onClick={(e) => handleLocalShapeClick(e, shape.id)}
                 onContextMenu={(e) => {
                   e.preventDefault();
-                  if (onSegmentRightClick && svgRef.current) {
-                    const svgRect = svgRef.current.getBoundingClientRect();
-                    const [vx, vy] = viewBoxString.split(" ").map(Number); // Get vx, vy from viewBox
-                    const clientXInSvg = e.clientX - svgRect.left;
-                    const clientYInSvg = e.clientY - svgRect.top;
-
-                    // Convert to SVG world coordinates
-                    const svgX = clientXInSvg + vx;
-                    const svgY = clientYInSvg + vy;
-
-                    onSegmentRightClick(shape.id, { x: svgX, y: svgY });
+                  e.stopPropagation();
+                  console.log("Segment right-click on polyline");
+                  if (onSegmentRightClick && actualRef.current) {
+                    const svgRect = actualRef.current.getBoundingClientRect();
+                    const svgPoint = actualRef.current.createSVGPoint();
+                    svgPoint.x = e.clientX;
+                    svgPoint.y = e.clientY;
+                    
+                    // Utiliser getScreenCTM pour une conversion précise
+                    const CTM = actualRef.current.getScreenCTM();
+                    if (CTM) {
+                      const transformedPoint = svgPoint.matrixTransform(CTM.inverse());
+                      onSegmentRightClick(shape.id, {
+                        x: transformedPoint.x,
+                        y: transformedPoint.y
+                      });
+                    }
                   }
+                }}
+                style={{
+                  ...styleProps,
+                  pointerEvents: isDraggingVertex ? "none" : "auto"
                 }}
               />
             );
@@ -292,18 +384,28 @@ function SvgCanvas({
                   onClick={(e) => handleLocalShapeClick(e, shape.id)}
                   onContextMenu={(e) => {
                     e.preventDefault();
-                    if (onSegmentRightClick && svgRef.current) {
-                      const svgRect = svgRef.current.getBoundingClientRect();
-                      const [vx, vy] = viewBoxString.split(" ").map(Number); // Get vx, vy from viewBox
-                      const clientXInSvg = e.clientX - svgRect.left;
-                      const clientYInSvg = e.clientY - svgRect.top;
+                    e.stopPropagation();
+                    console.log("Segment right-click on polygon");
+                    if (onSegmentRightClick && actualRef.current) {
+                      const svgRect = actualRef.current.getBoundingClientRect();
+                      const svgPoint = actualRef.current.createSVGPoint();
+                      svgPoint.x = e.clientX;
+                      svgPoint.y = e.clientY;
                       
-                      // Convert to SVG world coordinates
-                      const svgX = clientXInSvg + vx;
-                      const svgY = clientYInSvg + vy;
-                      
-                      onSegmentRightClick(shape.id, { x: svgX, y: svgY });
+                      // Utiliser getScreenCTM pour une conversion précise
+                      const CTM = actualRef.current.getScreenCTM();
+                      if (CTM) {
+                        const transformedPoint = svgPoint.matrixTransform(CTM.inverse());
+                        onSegmentRightClick(shape.id, {
+                          x: transformedPoint.x,
+                          y: transformedPoint.y
+                        });
+                      }
                     }
+                  }}
+                  style={{
+                    ...styleProps,
+                    pointerEvents: isDraggingVertex ? "none" : "auto"
                   }}
                 />
               );
@@ -317,18 +419,28 @@ function SvgCanvas({
                   onClick={(e) => handleLocalShapeClick(e, shape.id)}
                   onContextMenu={(e) => {
                     e.preventDefault();
-                    if (onSegmentRightClick && svgRef.current) {
-                      const svgRect = svgRef.current.getBoundingClientRect();
-                      const [vx, vy] = viewBoxString.split(" ").map(Number); // Get vx, vy from viewBox
-                      const clientXInSvg = e.clientX - svgRect.left;
-                      const clientYInSvg = e.clientY - svgRect.top;
-
-                      // Convert to SVG world coordinates
-                      const svgX = clientXInSvg + vx;
-                      const svgY = clientYInSvg + vy;
-
-                      onSegmentRightClick(shape.id, { x: svgX, y: svgY });
+                    e.stopPropagation();
+                    console.log("Segment right-click on polyline");
+                    if (onSegmentRightClick && actualRef.current) {
+                      const svgRect = actualRef.current.getBoundingClientRect();
+                      const svgPoint = actualRef.current.createSVGPoint();
+                      svgPoint.x = e.clientX;
+                      svgPoint.y = e.clientY;
+                      
+                      // Utiliser getScreenCTM pour une conversion précise
+                      const CTM = actualRef.current.getScreenCTM();
+                      if (CTM) {
+                        const transformedPoint = svgPoint.matrixTransform(CTM.inverse());
+                        onSegmentRightClick(shape.id, {
+                          x: transformedPoint.x,
+                          y: transformedPoint.y
+                        });
+                      }
                     }
+                  }}
+                  style={{
+                    ...styleProps,
+                    pointerEvents: isDraggingVertex ? "none" : "auto"
                   }}
                 />
               );
@@ -364,6 +476,11 @@ function SvgCanvas({
                     x={textPosX}
                     y={textPosY}
                     {...measurementTextStyle}
+                    pointerEvents="none"
+                    style={{
+                      userSelect: "none",
+                      cursor: "default"
+                    }}
                   >
                     {lengthInMmValue.toFixed(1)} mm
                   </text>
@@ -401,7 +518,13 @@ function SvgCanvas({
                           : "grab",
                       pointerEvents: "auto",
                     }}
-                    onMouseDown={(e) => onVertexMouseDown(shape.id, index, e)}
+                    onMouseDown={(e) => {
+                      e.stopPropagation(); // Empêcher la propagation de l'événement au SVG parent
+                      onVertexMouseDown(shape.id, index, e);
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation(); // Empêcher la propagation de l'événement au SVG parent
+                    }}
                   />
                 ))}
             </g>
@@ -479,6 +602,7 @@ function SvgCanvas({
         {/* Prévisualisation de la forme en cours de dessin (rectangle, cercle...) */}
         {previewShape && previewShape.type === "rectangle" && (
           <rect
+            key="preview-rectangle"
             x={previewShape.x}
             y={previewShape.y}
             width={previewShape.width}
@@ -488,6 +612,7 @@ function SvgCanvas({
         )}
         {previewShape && previewShape.type === "square" && (
           <rect
+            key="preview-square"
             x={previewShape.x}
             y={previewShape.y}
             width={previewShape.width}
@@ -497,6 +622,7 @@ function SvgCanvas({
         )}
         {previewShape && previewShape.type === "circle" && (
           <circle
+            key="preview-circle"
             cx={previewShape.cx}
             cy={previewShape.cy}
             r={previewShape.r}
@@ -506,7 +632,9 @@ function SvgCanvas({
       </svg>
     </div>
   );
-}
+});
+
+SvgCanvas.displayName = 'SvgCanvas';
 
 SvgCanvas.propTypes = {
   shapes: PropTypes.arrayOf(PropTypes.object).isRequired,
@@ -516,12 +644,12 @@ SvgCanvas.propTypes = {
   onShapeClick: PropTypes.func.isRequired,
   selectedPointIndex: PropTypes.number,
   onVertexMouseDown: PropTypes.func.isRequired,
-  svgUnitsPerMm: PropTypes.number.isRequired,
-  isDraggingVertex: PropTypes.bool.isRequired,
+  svgUnitsPerMm: PropTypes.number,
+  isDraggingVertex: PropTypes.bool,
   snappedPreviewPoint: PropTypes.object,
-  isDrawing: PropTypes.bool.isRequired,
-  onSegmentRightClick: PropTypes.func.isRequired,
-  displayedAngles: PropTypes.arrayOf(PropTypes.object).isRequired,
+  isDrawing: PropTypes.bool,
+  onSegmentRightClick: PropTypes.func,
+  displayedAngles: PropTypes.arrayOf(PropTypes.object),
   previewShape: PropTypes.object,
   onCanvasClick: PropTypes.func.isRequired,
   showGrid: PropTypes.bool,
@@ -529,7 +657,15 @@ SvgCanvas.propTypes = {
   minAngleForProduction: PropTypes.number,
   showAxes: PropTypes.bool,
   showOriginMarker: PropTypes.bool,
+  viewBox: PropTypes.object,
   viewBoxString: PropTypes.string,
+  onDoubleClick: PropTypes.func,
+  onMouseMove: PropTypes.func,
+  onMouseUp: PropTypes.func,
+  onFinishShape: PropTypes.func,
+  gridConfig: PropTypes.object,
+  activeTool: PropTypes.string,
+  isPanning: PropTypes.bool,
 };
 
 export default SvgCanvas;
