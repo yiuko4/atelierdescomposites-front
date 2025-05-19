@@ -160,14 +160,15 @@ function Toolbar({
         <h3 className="font-bold text-sm mb-2">Arrondi des coins</h3>
         <div className="flex flex-col gap-2">
           <div className="flex items-center">
-            <label className="mr-2 text-sm">Rayon:</label>
+            <label className="mr-2 text-sm">Courbure (°):</label>
             <input
               type="number"
               min="0"
-              max="50"
+              max="89"
               value={roundingRadius}
               onChange={(e) => setRoundingRadius(Number(e.target.value))}
               className="p-1 border rounded w-full"
+              title="Angle de 0° (pas de courbure) à 89° (courbure maximale)."
             />
           </div>
           <div className="flex items-center">
@@ -196,14 +197,15 @@ function Toolbar({
         <h3 className="font-bold text-sm mb-2">Angles Composés</h3>
         <div className="flex flex-col gap-2">
           <div className="flex items-center">
-            <label className="mr-2 text-sm">Rayon:</label>
+            <label className="mr-2 text-sm">Courbure d'Angle (°):</label>
             <input
               type="number"
               min="0"
-              max="50"
+              max="89"
               value={roundingRadius}
               onChange={(e) => setRoundingRadius(Number(e.target.value))}
               className="p-1 border rounded w-full"
+              title="Angle de 0° (pas de courbure) à 89° (courbure maximale)."
             />
           </div>
           <div className="flex items-center">

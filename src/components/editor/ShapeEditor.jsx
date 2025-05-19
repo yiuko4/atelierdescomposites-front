@@ -29,6 +29,7 @@ import {
   API_BASE_URL,
   MIN_ANGLE_FOR_PRODUCTION
 } from "../../constants/config";
+import ProductionConfirmationModal from './ProductionConfirmationModal';
 
 /**
  * Composant principal de l'éditeur de formes
@@ -67,11 +68,13 @@ function ShapeEditor({
   const [isOrthogonalMode, setIsOrthogonalMode] = useState(false);
   const [previewShape, setPreviewShape] = useState(null);
   const [hasTooSmallAngles, setHasTooSmallAngles] = useState(false);
-  const [roundingRadius, setRoundingRadius] = useState(5);
+  const [curvatureAngle, setCurvatureAngle] = useState(15);
   const [numSegmentsForCornerRounding, setNumSegmentsForCornerRounding] = useState(4);
   const [isInProduction, setIsInProduction] = useState(false);
   const [svgUnitsPerMm, setSvgUnitsPerMm] = useState(6);
   const [tempPanActive, setTempPanActive] = useState(false);
+  const [showProductionConfirmModal, setShowProductionConfirmModal] = useState(false);
+  const [shapeForProductionConfirm, setShapeForProductionConfirm] = useState(null);
   
   // Les hooks custom
   const { 
@@ -704,7 +707,7 @@ function ShapeEditor({
     // Appliquer l'arrondi seulement au sommet sélectionné
     const roundedPoints = applyCornerRounding(
       selectedShape.points,
-      roundingRadius,
+      curvatureAngle,
       numSegmentsForCornerRounding,
       selectedPointIndex // Passer l'index du sommet sélectionné
     );
@@ -725,7 +728,7 @@ function ShapeEditor({
     selectedShapeId, 
     selectedPointIndex,
     shapes, 
-    roundingRadius, 
+    curvatureAngle,
     numSegmentsForCornerRounding, 
     addToHistory, 
     isUndoRedoAction, 
@@ -760,7 +763,7 @@ function ShapeEditor({
     // Transformer le sommet sélectionné en angle composé de segments
     const transformedPoints = transformVertexToAngle(
       selectedShape.points,
-      roundingRadius,
+      curvatureAngle,
       numSegmentsForCornerRounding,
       selectedPointIndex,
       selectedShape.type === 'polygon' // isPolygon
@@ -781,7 +784,7 @@ function ShapeEditor({
     selectedShapeId, 
     selectedPointIndex,
     shapes, 
-    roundingRadius, 
+    curvatureAngle,
     numSegmentsForCornerRounding, 
     addToHistory, 
     isUndoRedoAction, 
@@ -816,27 +819,19 @@ function ShapeEditor({
     onShowSaveModal(svgContent);
   }, [shapes, viewBoxCoords, onShowSaveModal]);
 
-  /**
-   * Exporte la forme sélectionnée au format SVG et envoie à l'API pour production
-   */
-  const exportToSvg = async () => {
-    const selectedShape = shapes.find((s) => s.id === selectedShapeId);
-    if (!selectedShape || !selectedShape.points || selectedShape.points.length < 2) {
-      alert(
-        "Veuillez sélectionner une forme valide avec au moins 2 points pour l'exportation."
-      );
+  // Fonction qui contient la logique réelle de l'appel API pour la production
+  const executeProduction = async (shapeToProduce) => {
+    if (!shapeToProduce || !shapeToProduce.points || shapeToProduce.points.length < 2) {
+      alert("Erreur : Aucune forme valide à produire.");
+      setIsInProduction(false);
       return;
     }
     
-    if (hasTooSmallAngles) {
-      alert("La forme contient des angles trop aigus. Veuillez les corriger avant de lancer la production.");
-      return;
-    }
-
     setIsInProduction(true);
+    setShowProductionConfirmModal(false); // Fermer la modale de confirmation
 
     try {
-      const svgPoints = selectedShape.points.map((p) => (`${p.x},${p.y}`)).join(' ');
+      const svgPoints = shapeToProduce.points.map((p) => (`${p.x},${p.y}`)).join(' ');
       const svgWidth = viewBoxCoords.width;
       const svgHeight = viewBoxCoords.height;
       const svgContent = `<svg width="${svgWidth}" height="${svgHeight}" xmlns="http://www.w3.org/2000/svg"><polygon points="${svgPoints}" fill="none" stroke="black" /></svg>`;
@@ -847,7 +842,7 @@ function ShapeEditor({
       const formData = new FormData();
       formData.append("svgfile", file);
       formData.append("sendToApi", "true");
-      formData.append("closePolygons", "true");
+      formData.append("closePolygons", "true"); // Assumant que c'est toujours un polygone pour la production ici
 
       const response = await fetch(
         `${API_BASE_URL}/api/direct/svg-to-sequence`,
@@ -856,21 +851,15 @@ function ShapeEditor({
           body: formData,
         }
       );
-
       const data = await response.json();
 
       if (data.success) {
         console.log("Export API réussi:", data);
         const jobId = data.pieceId || `job_${Date.now()}`;
-        // Sauvegarder les formes avant de naviguer
         sessionStorage.setItem('persistedShapes', JSON.stringify(shapes));
-
-        // Si onShowSaveModal est fourni, l'appeler pour permettre à l'utilisateur de sauvegarder la forme
         if (onShowSaveModal) {
-          onShowSaveModal(svgContent);
+          onShowSaveModal(svgContent); // Permettre la sauvegarde si nécessaire
         }
-        
-        // Rediriger vers la page de production
         navigate(`/production/${jobId}`);
       } else {
         console.error("Erreur d'export API:", data.message);
@@ -883,6 +872,23 @@ function ShapeEditor({
       setIsInProduction(false);
     }
   };
+
+  // Ouvre la modale de confirmation avant de lancer la production
+  const handleStartProductionFlow = useCallback(() => {
+    const selectedShape = shapes.find((s) => s.id === selectedShapeId);
+    if (!selectedShape || !selectedShape.points || selectedShape.points.length < 2) {
+      alert(
+        "Veuillez sélectionner une forme valide avec au moins 2 points pour la production."
+      );
+      return;
+    }
+    if (hasTooSmallAngles) {
+      alert("La forme contient des angles trop aigus. Veuillez les corriger avant de lancer la production.");
+      return;
+    }
+    setShapeForProductionConfirm(selectedShape);
+    setShowProductionConfirmModal(true);
+  }, [shapes, selectedShapeId, hasTooSmallAngles]);
 
   // Sauvegarder dans la bibliothèque
   const handleSaveToLibrary = useCallback(async (pieceData) => {
@@ -1014,8 +1020,8 @@ function ShapeEditor({
         onResetShape={resetPrincipalShape}
         onApplyRounding={handleApplyRounding}
         onTransformToAngle={handleTransformToAngle}
-        roundingRadius={roundingRadius}
-        setRoundingRadius={setRoundingRadius}
+        roundingRadius={curvatureAngle}
+        setRoundingRadius={setCurvatureAngle}
         numSegmentsForCornerRounding={numSegmentsForCornerRounding}
         setNumSegmentsForCornerRounding={setNumSegmentsForCornerRounding}
         isOrthogonalMode={isOrthogonalMode}
@@ -1024,7 +1030,7 @@ function ShapeEditor({
         showProductionTracker={false}
         setShowProductionTracker={() => {}}
         onShowSaveModal={handleShowSaveModal}
-        onStartProduction={exportToSvg}
+        onStartProduction={handleStartProductionFlow}
         onToggleSVGLibrary={onToggleSVGLibrary}
         showSVGLibrary={showSVGLibrary}
         showGrid={showGrid}
@@ -1121,6 +1127,19 @@ function ShapeEditor({
           }}
         />
       </div>
+
+      {showProductionConfirmModal && shapeForProductionConfirm && (
+        <ProductionConfirmationModal
+          isOpen={showProductionConfirmModal}
+          onClose={() => {
+            setShowProductionConfirmModal(false);
+            setShapeForProductionConfirm(null);
+          }}
+          onConfirm={() => executeProduction(shapeForProductionConfirm)}
+          shape={shapeForProductionConfirm}
+          svgUnitsPerMm={svgUnitsPerMm}
+        />
+      )}
     </div>
   );
 }

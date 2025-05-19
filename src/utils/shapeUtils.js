@@ -329,103 +329,106 @@ export const applyCornerRounding = (points, radius, numSegments, selectedVertexI
 /**
  * Transforme un sommet en angle composé de segments
  * @param {Array} points - Points du polygone
- * @param {number} radius - Rayon de l'angle composé
+ * @param {number} curvatureAngleDegree - Angle de courbure souhaité en degrés (0-89)
  * @param {number} numSegments - Nombre de segments pour l'angle (minimum 2)
  * @param {number|null} selectedVertexIndex - Index du sommet à transformer
  * @param {boolean} isPolygon - Si true, la forme est un polygone fermé, sinon une polyligne
  * @returns {Array} Points du polygone avec le sommet transformé en angle
  */
-export const transformVertexToAngle = (points, radius, numSegments, selectedVertexIndex, isPolygon = true) => {
-  if (points.length < 3 || radius <= 0 || numSegments < 2) return points;
+export const transformVertexToAngle = (points, curvatureAngleDegree, numSegments, selectedVertexIndex, isPolygon = true) => {
+  if (points.length < 3 || numSegments < 2) return points;
+  if (curvatureAngleDegree <= 0) return points; // Pas de courbure si angle est 0 ou négatif
 
   const n = points.length;
-  const result = [...points]; // On part d'une copie des points originaux
+  const result = [...points]; 
   
-  // Si aucun vertex spécifique n'est sélectionné ou un index invalide, on retourne les points d'origine
   if (selectedVertexIndex === null || selectedVertexIndex < 0 || selectedVertexIndex >= n) {
     return points;
   }
-
-  // On ne traite que le vertex sélectionné
   const i = selectedVertexIndex;
-  
-  // Pour les polylignes, on n'autorise pas la transformation des extrémités
   if (!isPolygon && (i === 0 || i === n - 1)) {
     return points;
   }
 
-  // Déterminer les points précédent et suivant, en tenant compte des formes fermées ou ouvertes
   const prev = isPolygon ? (i - 1 + n) % n : i - 1;
   const curr = i;
   const next = isPolygon ? (i + 1) % n : i + 1;
 
-  const P = points[curr]; // Le point à transformer
-  const P_prev = points[prev]; // Point précédent
-  const P_next = points[next]; // Point suivant
+  const P = points[curr]; 
+  const P_prev = points[prev]; 
+  const P_next = points[next]; 
 
-  // Vecteurs du sommet aux points adjacents
   const v_PA = V.subtract(P_prev, P);
   const v_PB = V.subtract(P_next, P);
-
   const len_PA = V.magnitude(v_PA);
   const len_PB = V.magnitude(v_PB);
 
   if (len_PA === 0 || len_PB === 0) return points;
 
-  // Calculer l'angle entre les deux segments
-  const angleP_cos = V.dot(v_PA, v_PB) / (len_PA * len_PB);
-  if (Math.abs(angleP_cos) > 1) return points;
-  const angleP = Math.acos(angleP_cos);
-
-  if (isNaN(angleP) || angleP <= 0.01 || angleP >= Math.PI - 0.01) {
-    return points; // Angle plat ou nul, on ne peut pas le transformer
+  const angleP_rad = Math.acos(Math.max(-1, Math.min(1, V.dot(v_PA, v_PB) / (len_PA * len_PB))));
+  if (isNaN(angleP_rad) || angleP_rad <= 0.01 || angleP_rad >= Math.PI - 0.01) {
+    return points; 
   }
 
-  // Normaliser les vecteurs des segments
+  // Calcul du rayon SVG effectif basé sur l'angle de courbure
+  const norm_curvature = Math.min(Math.max(curvatureAngleDegree, 0), 89) / 89.0;
+  const max_offset_on_segment = Math.min(len_PA, len_PB) * 0.49; // Ne pas dépasser ~la moitié du segment le plus court
+  const actual_offset_on_segment = norm_curvature * max_offset_on_segment;
+  
+  if (actual_offset_on_segment <= 0) return points; // Si l'offset est nul, pas de transformation
+
+  // Le rayon de l'arc lui-même. angleP_rad est l'angle *entre* les segments v_PA et v_PB.
+  // L'angle au sommet du triangle isocèle formé par P et les points tangents est angleP_rad.
+  // Les angles à la base de ce triangle (aux points tangents) sont (PI - angleP_rad) / 2.
+  // Le rayon SVG de l'arc est offset / tan( (PI - angle_de_l_arc_au_centre) / 2 )
+  // Ou plus simplement : radius_svg = offset_on_segment * tan(angleP_rad / 2) si offset_on_segment est la distance du sommet aux points tangents.
+  const effectiveRadiusSVG = actual_offset_on_segment * Math.tan(angleP_rad / 2.0);
+
+  if (effectiveRadiusSVG <= 0) return points;
+
   const norm_v_PA = V.normalize(v_PA);
   const norm_v_PB = V.normalize(v_PB);
-  
-  // L'angle sera toujours intérieur, donc directionMultiplier est 1
-  const directionMultiplier = 1;
+  const directionMultiplier = 1; // Toujours intérieur
 
-  // === APPROCHE POUR CRÉER L'ANGLE INTÉRIEUR ===
-  
-  // Calculer les nouveaux points qui formeront l'angle composé
   const anglePoints = [];
-  
-  // Ajouter des points intermédiaires pour l'angle composé
   for (let j = 0; j <= numSegments; j++) {
-    // Interpolation linéaire entre les directions des deux segments
     const t = j / numSegments;
-    
-    // Vecteur interpolé entre les deux segments
-    // Pour un angle intérieur, on s'assure que l'interpolation se fait "vers l'intérieur"
-    // Pour cela, on peut utiliser le produit vectoriel pour déterminer le sens
-    // et ajuster l'interpolation si nécessaire, ou plus simplement,
-    // s'assurer que les vecteurs norm_v_PA et norm_v_PB sont orientés correctement
-    // pour une interpolation directe.
-    
-    // Une approche plus simple est de pivoter les vecteurs norm_v_PA et norm_v_PB
-    // pour qu'ils pointent "vers l'intérieur" de l'angle formé par P_prev, P, P_next.
-    // Cependant, l'interpolation directe entre norm_v_PA et norm_v_PB devrait
-    // naturellement former l'arc à l'intérieur si radius est positif.
-    
     const interpolatedVector = V.normalize({
       x: norm_v_PA.x * (1 - t) + norm_v_PB.x * t,
       y: norm_v_PA.y * (1 - t) + norm_v_PB.y * t
     });
-    
-    // Calculer le point à distance 'radius' du sommet dans la direction interpolée
     const anglePoint = {
-      x: P.x + interpolatedVector.x * radius * directionMultiplier,
-      y: P.y + interpolatedVector.y * radius * directionMultiplier
+      x: P.x + interpolatedVector.x * effectiveRadiusSVG * directionMultiplier,
+      y: P.y + interpolatedVector.y * effectiveRadiusSVG * directionMultiplier
     };
-    
     anglePoints.push(anglePoint);
   }
   
-  // Remplacer le point du sommet par les points de l'angle
   result.splice(curr, 1, ...anglePoints);
-
   return result;
+};
+
+/**
+ * Calcule la longueur totale d'un chemin (polygone ou polyligne) en millimètres.
+ * @param {Array} points - Points de la forme [{x, y}, ...].
+ * @param {boolean} isPolygon - True si la forme est un polygone (fermé), false pour une polyligne.
+ * @param {number} svgUnitsPerMm - Le ratio pour convertir les unités SVG en millimètres.
+ * @returns {number} La longueur totale du chemin en millimètres, arrondie à une décimale.
+ */
+export const calculateTotalPathLengthMm = (points, isPolygon, svgUnitsPerMm) => {
+  if (!points || points.length < 2) return 0;
+
+  let totalLengthInSvgUnits = 0;
+  const numSegments = isPolygon ? points.length : points.length - 1;
+  
+  for (let i = 0; i < numSegments; i++) {
+    const p1 = points[i];
+    const p2 = points[(i + 1) % points.length]; // Gère le dernier segment des polygones
+    totalLengthInSvgUnits += V.distance(p1, p2);
+  }
+
+  const conversionFactor = svgUnitsPerMm > 0 ? 1 / svgUnitsPerMm : 1;
+  const totalLengthInMm = totalLengthInSvgUnits * conversionFactor;
+  
+  return parseFloat(totalLengthInMm.toFixed(1));
 }; 
